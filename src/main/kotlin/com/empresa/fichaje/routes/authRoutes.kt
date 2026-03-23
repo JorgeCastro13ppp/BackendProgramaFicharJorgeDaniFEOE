@@ -1,14 +1,21 @@
 package com.empresa.fichaje.routes
 
 
+import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.LoginRequest
 import com.empresa.fichaje.models.LoginResponse
 import com.empresa.fichaje.services.AuthService
+import com.empresa.fichaje.services.JwtService
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.auth.authenticate
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.principal
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
 
 fun Route.authRoutes() {
 
@@ -18,12 +25,39 @@ fun Route.authRoutes() {
 
         val request = call.receive<LoginRequest>()
 
-        val response = authService.login(request)
+        val user = authService.login(request)
 
-        if (response != null) {
-            call.respond(response)
+        if (user != null) {
+
+            val token = JwtService.generateToken(user.id, user.role)
+
+            call.respond(
+                mapOf("token" to token)
+            )
+
         } else {
             call.respond(HttpStatusCode.Unauthorized, "Credenciales incorrectas")
+        }
+    }
+
+    authenticate("auth-jwt") {
+
+        post("/register") {
+
+            val principal = call.principal<JWTPrincipal>()
+
+            val role = principal?.payload?.getClaim("role")?.asString()
+
+            if (role != "admin") {
+                call.respond(HttpStatusCode.Forbidden, "No autorizado")
+                return@post
+            }
+
+            val request = call.receive<LoginRequest>()
+
+            authService.register(request.username, request.password)
+
+            call.respond(mapOf("message" to "Usuario creado"))
         }
     }
 }

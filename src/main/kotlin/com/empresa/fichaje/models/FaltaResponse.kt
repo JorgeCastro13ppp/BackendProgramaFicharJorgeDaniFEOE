@@ -3,8 +3,9 @@ package com.empresa.fichaje.models
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class LoginResponse(
-    val message: String,
+data class FaltaResponse(
     val userId: Int,
-    val role: String
+    val fecha: String,
+    val tipo: String,
+    val descripcion: String
 )

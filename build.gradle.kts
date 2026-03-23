@@ -26,4 +26,13 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.4.1")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.zxing:javase:3.5.3")
+    implementation("org.jetbrains.exposed:exposed-core:0.50.1")
+    implementation("org.jetbrains.exposed:exposed-dao:0.50.1")
+    implementation("org.jetbrains.exposed:exposed-jdbc:0.50.1")
+    implementation("org.postgresql:postgresql:42.7.3")
+    implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
+    implementation("org.mindrot:jbcrypt:0.4")
+    implementation("io.ktor:ktor-server-core-jvm:3.4.1")
+    implementation("io.ktor:ktor-server-auth:3.4.1")
+    implementation("io.ktor:ktor-server-auth-jwt:3.4.1")
 }

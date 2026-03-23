@@ -3,15 +3,49 @@ package com.empresa.fichaje.services
 
 import com.empresa.fichaje.models.LoginRequest
 import com.empresa.fichaje.models.LoginResponse
+import com.empresa.fichaje.database.UsuariosTable
+import com.empresa.fichaje.models.User
+import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
 
 class AuthService {
 
-    fun login(request: LoginRequest): LoginResponse? {
+    fun login(request: LoginRequest): User? {
 
-        if (request.username == "admin" && request.password == "1234") {
-            return LoginResponse("Login correcto", 1)
+        return transaction {
+
+            UsuariosTable.selectAll()
+                .find { row ->
+
+                    row[UsuariosTable.username] == request.username &&
+                            SecurityService.verifyPassword(
+                                request.password,
+                                row[UsuariosTable.password]
+                            )
+                }
+                ?.let {
+
+                    User(
+                        id = it[UsuariosTable.id],
+                        username = it[UsuariosTable.username],
+                        role = it[UsuariosTable.role]
+                    )
+                }
         }
+    }
 
-        return null
+    fun register(username: String, password: String): Boolean {
+
+        val hashedPassword = SecurityService.hashPassword(password)
+
+        return transaction {
+            UsuariosTable.insert {
+                it[UsuariosTable.username] = username
+                it[UsuariosTable.password] = hashedPassword
+                it[UsuariosTable.role] = "worker" // por defecto
+            }
+            true
+        }
     }
 }

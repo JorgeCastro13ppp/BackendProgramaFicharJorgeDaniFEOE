@@ -3,9 +3,9 @@ package com.empresa.fichaje.models
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class FichajeRequest(
+data class FaltaRequest(
     //val userId: Int,
-    val token: String,
-    val tipo: String // entrada / salida
-
+    val fecha: String,
+    val tipo: String,
+    val descripcion: String
 )

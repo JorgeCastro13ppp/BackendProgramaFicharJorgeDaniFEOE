@@ -1,20 +1,132 @@
 package com.empresa.fichaje.services
 
+import com.empresa.fichaje.database.FichajesTable
+import com.empresa.fichaje.models.FichajeResponse
+import com.empresa.fichaje.models.HorasResponse
+import org.jetbrains.exposed.sql.selectAll
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.insert
 
-import com.empresa.fichaje.models.FichajeRequest
+class FichajeService {
 
-class FichajeService(
-    private val qrService: QrService
-) {
+    fun registrarFichaje(
+        userId: Int,
+        token: String,
+        tipo: String
+    ) {
 
-    fun fichar(request: FichajeRequest): String {
+        // Aquí podrías validar token QR si quieres reforzarlo más
 
-        if (!qrService.isValid(request.token)) {
-            return "Token inválido o expirado"
+        transaction {
+
+            FichajesTable.insert {
+
+                it[FichajesTable.userId] = userId
+                it[FichajesTable.fechaHora] = System.currentTimeMillis()
+                it[FichajesTable.tipo] = tipo
+            }
         }
+    }
 
-        println("Usuario ${request.userId} fichó correctamente")
 
-        return "Fichaje registrado correctamente"
+    fun obtenerFichajes(userId: Int): List<FichajeResponse> {
+
+        return transaction {
+
+            FichajesTable
+                .selectAll()
+                .filter { it[FichajesTable.userId] == userId }
+                .map {
+
+                    FichajeResponse(
+                        userId = it[FichajesTable.userId],
+                        fechaHora = it[FichajesTable.fechaHora],
+                        tipo = it[FichajesTable.tipo]
+                    )
+                }
+        }
+    }
+    fun horasMensuales(userId: Int): Double {
+
+        return transaction {
+
+            val now = java.time.LocalDate.now()
+
+            val inicioMes = now.withDayOfMonth(1)
+                .atStartOfDay()
+                .toEpochSecond(java.time.ZoneOffset.UTC) * 1000
+
+            val fichajes = FichajesTable
+                .selectAll()
+                .filter {
+                    it[FichajesTable.userId] == userId &&
+                            it[FichajesTable.fechaHora] >= inicioMes
+                }
+                .sortedBy { it[FichajesTable.fechaHora] }
+
+            var entrada: Long? = null
+            var totalHoras = 0.0
+
+            for (f in fichajes) {
+
+                if (f[FichajesTable.tipo] == "entrada") {
+                    entrada = f[FichajesTable.fechaHora]
+                }
+
+                if (f[FichajesTable.tipo] == "salida" && entrada != null) {
+
+                    val salida = f[FichajesTable.fechaHora]
+
+                    totalHoras +=
+                        (salida - entrada) / 1000.0 / 60.0 / 60.0
+
+                    entrada = null
+                }
+            }
+
+            totalHoras
+        }
+    }
+
+
+    fun calcularHoras(userId: Int): List<HorasResponse> {
+
+        return transaction {
+
+            val fichajes = FichajesTable
+                .selectAll()
+                .filter { it[FichajesTable.userId] == userId }
+                .sortedBy { it[FichajesTable.fechaHora] }
+
+            val resultado = mutableListOf<HorasResponse>()
+
+            var entrada: Long? = null
+
+            for (f in fichajes) {
+
+                if (f[FichajesTable.tipo] == "entrada") {
+                    entrada = f[FichajesTable.fechaHora]
+                }
+
+                if (f[FichajesTable.tipo] == "salida" && entrada != null) {
+
+                    val salida = f[FichajesTable.fechaHora]
+
+                    val horas =
+                        (salida - entrada) / 1000.0 / 60.0 / 60.0
+
+                    resultado.add(
+                        HorasResponse(
+                            fecha = entrada.toString(),
+                            horasTrabajadas = horas
+                        )
+                    )
+
+                    entrada = null
+                }
+            }
+
+            resultado
+        }
     }
 }
