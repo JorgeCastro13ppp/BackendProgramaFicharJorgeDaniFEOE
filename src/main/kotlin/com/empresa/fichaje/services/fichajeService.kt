@@ -129,4 +129,21 @@ class FichajeService {
             resultado
         }
     }
+
+    fun obtenerTodos(): List<FichajeResponse> {
+
+        return transaction {
+
+            FichajesTable
+                .selectAll()
+                .map {
+
+                    FichajeResponse(
+                        userId = it[FichajesTable.userId],
+                        fechaHora = it[FichajesTable.fechaHora],
+                        tipo = it[FichajesTable.tipo]
+                    )
+                }
+        }
+    }
 }

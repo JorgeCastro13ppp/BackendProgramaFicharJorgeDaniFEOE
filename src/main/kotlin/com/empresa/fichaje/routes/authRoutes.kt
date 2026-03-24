@@ -59,5 +59,23 @@ fun Route.authRoutes() {
 
             call.respond(mapOf("message" to "Usuario creado"))
         }
+
+        get("/admin/usuarios") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
+
+            val usuarios = authService.obtenerUsuarios()
+
+            call.respond(usuarios)
+        }
     }
 }

@@ -93,5 +93,29 @@ fun Route.fichajeRoutes(fichajeService: FichajeService) {
 
             call.respond(mapOf("horasMensuales" to horas))
         }
+
+        get("/admin/fichajes") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
+
+            val userIdParam = call.request.queryParameters["userId"]?.toIntOrNull()
+
+            val fichajes = if (userIdParam != null) {
+                fichajeService.obtenerFichajes(userIdParam)
+            } else {
+                fichajeService.obtenerTodos()
+            }
+
+            call.respond(fichajes)
+        }
     }
 }

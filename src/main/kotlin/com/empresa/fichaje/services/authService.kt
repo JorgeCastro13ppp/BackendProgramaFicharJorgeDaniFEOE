@@ -5,6 +5,7 @@ import com.empresa.fichaje.models.LoginRequest
 import com.empresa.fichaje.models.LoginResponse
 import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.User
+import com.empresa.fichaje.models.UsuarioResponse
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -46,6 +47,21 @@ class AuthService {
                 it[UsuariosTable.role] = "worker" // por defecto
             }
             true
+        }
+    }
+
+    fun obtenerUsuarios(): List<UsuarioResponse> {
+
+        return transaction {
+
+            UsuariosTable.selectAll().map {
+
+                UsuarioResponse(
+                    id = it[UsuariosTable.id],
+                    username = it[UsuariosTable.username],
+                    role = it[UsuariosTable.role]
+                )
+            }
         }
     }
 }
