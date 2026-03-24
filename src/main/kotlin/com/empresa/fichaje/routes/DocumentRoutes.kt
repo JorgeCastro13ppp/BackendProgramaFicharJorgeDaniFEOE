@@ -47,7 +47,66 @@ fun Route.documentRoutes() {
 
             val userId = principal.payload.getClaim("userId").asInt()
 
-            val docs = service.getDocuments(userId)
+            val tipo = call.request.queryParameters["tipo"]
+
+            val docs = service.getDocumentsFiltered(
+                userId = userId,
+                tipo = tipo
+            )
+
+            call.respond(docs)
+        }
+        delete("/admin/documentos/{id}") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden, "No autorizado")
+                return@delete
+            }
+
+            val id = call.parameters["id"]?.toIntOrNull()
+
+            if (id == null) {
+
+                call.respond(HttpStatusCode.BadRequest, "ID inválido")
+                return@delete
+            }
+
+            service.deleteDocument(id)
+
+            call.respond(mapOf("message" to "Documento eliminado"))
+        }
+        get("/admin/documentos") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
+
+            val userId = call.request
+                .queryParameters["userId"]
+                ?.toIntOrNull()
+
+            val tipo = call.request
+                .queryParameters["tipo"]
+
+            val docs = service.getDocumentsFiltered(
+                userId = userId,
+                tipo = tipo
+            )
 
             call.respond(docs)
         }

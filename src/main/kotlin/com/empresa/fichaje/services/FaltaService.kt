@@ -48,6 +48,7 @@ class FaltasService {
             query.map {
 
                 FaltaResponse(
+                    id = it[FaltasTable.id],
                     userId = it[FaltasTable.userId],
                     fecha = it[FaltasTable.fecha],
                     tipo = it[FaltasTable.tipo],

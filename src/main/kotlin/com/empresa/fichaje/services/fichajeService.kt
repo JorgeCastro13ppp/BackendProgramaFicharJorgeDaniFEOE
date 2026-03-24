@@ -3,6 +3,8 @@ package com.empresa.fichaje.services
 import com.empresa.fichaje.database.FichajesTable
 import com.empresa.fichaje.models.FichajeResponse
 import com.empresa.fichaje.models.HorasResponse
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.insert
@@ -28,6 +30,16 @@ class FichajeService {
         }
     }
 
+    fun eliminarFichaje(id: Int) {
+
+        transaction {
+
+            FichajesTable.deleteWhere {
+                FichajesTable.id eq id
+            }
+        }
+    }
+
 
     fun obtenerFichajes(userId: Int): List<FichajeResponse> {
 
@@ -39,6 +51,7 @@ class FichajeService {
                 .map {
 
                     FichajeResponse(
+                        id = it[FichajesTable.id],
                         userId = it[FichajesTable.userId],
                         fechaHora = it[FichajesTable.fechaHora],
                         tipo = it[FichajesTable.tipo]
@@ -139,6 +152,7 @@ class FichajeService {
                 .map {
 
                     FichajeResponse(
+                        id = it[FichajesTable.userId],
                         userId = it[FichajesTable.userId],
                         fechaHora = it[FichajesTable.fechaHora],
                         tipo = it[FichajesTable.tipo]

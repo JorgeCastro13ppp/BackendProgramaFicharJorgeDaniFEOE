@@ -3,6 +3,8 @@ package com.empresa.fichaje.services
 import com.empresa.fichaje.database.DocumentosTable
 import com.empresa.fichaje.models.DocumentRequest
 import com.empresa.fichaje.models.DocumentResponse
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -26,6 +28,8 @@ class DocumentService {
                 .filter { it[DocumentosTable.userId] == userId }
                 .map {
                     DocumentResponse(
+                        id = it[DocumentosTable.id],
+                        userId = it[DocumentosTable.userId],
                         nombre = it[DocumentosTable.nombre],
                         tipo = it[DocumentosTable.tipo],
                         url = it[DocumentosTable.url]
@@ -34,20 +38,43 @@ class DocumentService {
         }
     }
 
-    fun getDocumentsByType(userId: Int, tipo: String): List<DocumentResponse> {
+    fun getDocumentsFiltered(
+        userId: Int? = null,
+        tipo: String? = null
+    ): List<DocumentResponse> {
+
         return transaction {
+
             DocumentosTable.selectAll()
                 .filter {
-                    it[DocumentosTable.userId] == userId &&
-                            it[DocumentosTable.tipo] == tipo
+
+                    (userId == null ||
+                            it[DocumentosTable.userId] == userId)
+
+                            &&
+
+                            (tipo == null ||
+                                    it[DocumentosTable.tipo] == tipo)
                 }
                 .map {
+
                     DocumentResponse(
+                        id = it[DocumentosTable.id],
+                        userId = it[DocumentosTable.userId],
                         nombre = it[DocumentosTable.nombre],
                         tipo = it[DocumentosTable.tipo],
                         url = it[DocumentosTable.url]
                     )
                 }
+        }
+    }
+    fun deleteDocument(id: Int) {
+
+        transaction {
+
+            DocumentosTable.deleteWhere {
+                DocumentosTable.id eq id
+            }
         }
     }
 }

@@ -117,5 +117,31 @@ fun Route.fichajeRoutes(fichajeService: FichajeService) {
 
             call.respond(fichajes)
         }
+        delete("/admin/fichajes/{id}") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden)
+                return@delete
+            }
+
+            val id = call.parameters["id"]?.toIntOrNull()
+
+            if (id == null) {
+
+                call.respond(HttpStatusCode.BadRequest, "ID inválido")
+                return@delete
+            }
+
+            fichajeService.eliminarFichaje(id)
+
+            call.respond(mapOf("message" to "Fichaje eliminado"))
+        }
     }
 }
