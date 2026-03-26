@@ -77,5 +77,47 @@ fun Route.authRoutes() {
 
             call.respond(usuarios)
         }
+
+        delete("/admin/usuarios/{id}") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+                call.respond(HttpStatusCode.Forbidden)
+                return@delete
+            }
+
+            val id = call.parameters["id"]?.toIntOrNull()
+
+            if (id == null) {
+                call.respond(HttpStatusCode.BadRequest, "ID inválido")
+                return@delete
+            }
+
+            // 🚫 Evitar que el admin elimine su propia cuenta
+            val currentUserId = principal.payload
+                .getClaim("userId")
+                .asInt()
+
+            if (currentUserId == id) {
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    "No puedes eliminar tu propio usuario"
+                )
+                return@delete
+            }
+
+            val eliminado = authService.eliminarUsuario(id)
+
+            if (eliminado) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "Usuario no encontrado")
+            }
+        }
     }
 }

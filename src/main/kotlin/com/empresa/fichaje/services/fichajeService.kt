@@ -1,6 +1,7 @@
 package com.empresa.fichaje.services
 
 import com.empresa.fichaje.database.FichajesTable
+import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.FichajeResponse
 import com.empresa.fichaje.models.HorasResponse
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
@@ -8,6 +9,8 @@ import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.update
+import org.jetbrains.exposed.sql.innerJoin
 
 class FichajeService {
 
@@ -45,14 +48,17 @@ class FichajeService {
 
         return transaction {
 
-            FichajesTable
+            (FichajesTable innerJoin UsuariosTable)
                 .selectAll()
-                .filter { it[FichajesTable.userId] == userId }
+                .filter {
+                    it[FichajesTable.userId] == userId
+                }
                 .map {
 
                     FichajeResponse(
                         id = it[FichajesTable.id],
                         userId = it[FichajesTable.userId],
+                        username = it[UsuariosTable.username],
                         fechaHora = it[FichajesTable.fechaHora],
                         tipo = it[FichajesTable.tipo]
                     )
@@ -147,17 +153,53 @@ class FichajeService {
 
         return transaction {
 
-            FichajesTable
+            (FichajesTable innerJoin UsuariosTable)
                 .selectAll()
                 .map {
 
                     FichajeResponse(
-                        id = it[FichajesTable.userId],
+                        id = it[FichajesTable.id],
                         userId = it[FichajesTable.userId],
+                        username = it[UsuariosTable.username],
                         fechaHora = it[FichajesTable.fechaHora],
                         tipo = it[FichajesTable.tipo]
                     )
                 }
+        }
+    }
+
+    fun actualizarFichaje(
+        id: Int,
+        nuevaFecha: Long,
+        nuevoTipo: String
+    ) {
+
+        transaction {
+
+            FichajesTable.update({
+                FichajesTable.id eq id
+            }) {
+
+                it[fechaHora] = nuevaFecha
+                it[tipo] = nuevoTipo
+            }
+        }
+    }
+
+    fun crearFichajeManual(
+        userId: Int,
+        fechaHora: Long,
+        tipo: String
+    ) {
+
+        transaction {
+
+            FichajesTable.insert {
+
+                it[FichajesTable.userId] = userId
+                it[FichajesTable.fechaHora] = fechaHora
+                it[FichajesTable.tipo] = tipo
+            }
         }
     }
 }

@@ -6,6 +6,8 @@ import com.empresa.fichaje.models.LoginResponse
 import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.User
 import com.empresa.fichaje.models.UsuarioResponse
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -62,6 +64,16 @@ class AuthService {
                     role = it[UsuariosTable.role]
                 )
             }
+        }
+    }
+
+    fun eliminarUsuario(id: Int): Boolean {
+
+        return transaction {
+
+            UsuariosTable.deleteWhere {
+                UsuariosTable.id eq id
+            } > 0
         }
     }
 }

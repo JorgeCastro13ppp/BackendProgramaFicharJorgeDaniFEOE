@@ -143,5 +143,63 @@ fun Route.fichajeRoutes(fichajeService: FichajeService) {
 
             call.respond(mapOf("message" to "Fichaje eliminado"))
         }
+
+        put("/admin/fichajes/{id}") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden)
+                return@put
+            }
+
+            val id = call.parameters["id"]?.toIntOrNull()
+
+            if (id == null) {
+
+                call.respond(HttpStatusCode.BadRequest)
+                return@put
+            }
+
+            val request = call.receive<FichajeResponse>()
+
+            fichajeService.actualizarFichaje(
+                id,
+                request.fechaHora,
+                request.tipo
+            )
+
+            call.respond(mapOf("message" to "Fichaje actualizado"))
+        }
+
+        post("/admin/fichajes") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            val role = principal.payload
+                .getClaim("role")
+                .asString()
+
+            if (role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden)
+                return@post
+            }
+
+            val request = call.receive<FichajeResponse>()
+
+            fichajeService.crearFichajeManual(
+                request.userId,
+                request.fechaHora,
+                request.tipo
+            )
+
+            call.respond(mapOf("message" to "Fichaje creado manualmente"))
+        }
     }
 }
