@@ -1,10 +1,12 @@
 package com.empresa.fichaje.services
 
 import com.empresa.fichaje.database.DocumentosTable
+import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.DocumentRequest
 import com.empresa.fichaje.models.DocumentResponse
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
+import org.jetbrains.exposed.sql.innerJoin
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -30,6 +32,7 @@ class DocumentService {
                     DocumentResponse(
                         id = it[DocumentosTable.id],
                         userId = it[DocumentosTable.userId],
+                        username = it[UsuariosTable.username],
                         nombre = it[DocumentosTable.nombre],
                         tipo = it[DocumentosTable.tipo],
                         url = it[DocumentosTable.url]
@@ -45,7 +48,13 @@ class DocumentService {
 
         return transaction {
 
-            DocumentosTable.selectAll()
+            DocumentosTable
+                .innerJoin(
+                    UsuariosTable,
+                    { DocumentosTable.userId },
+                    { UsuariosTable.id }
+                )
+                .selectAll()
                 .filter {
 
                     (userId == null ||
@@ -61,6 +70,7 @@ class DocumentService {
                     DocumentResponse(
                         id = it[DocumentosTable.id],
                         userId = it[DocumentosTable.userId],
+                        username = it[UsuariosTable.username],
                         nombre = it[DocumentosTable.nombre],
                         tipo = it[DocumentosTable.tipo],
                         url = it[DocumentosTable.url]

@@ -25,17 +25,31 @@ fun Route.fichajeRoutes(fichajeService: FichajeService) {
 
             val principal = call.principal<JWTPrincipal>()!!
 
-            val userId = principal.payload.getClaim("userId").asInt()
+            val userId = principal.payload
+                .getClaim("userId")
+                .asInt()
 
             val request = call.receive<FichajeRequest>()
 
-            fichajeService.registrarFichaje(
-                userId,
-                request.token,
-                request.tipo
-            )
+            try {
 
-            call.respond(mapOf("message" to "Fichaje registrado"))
+                fichajeService.registrarFichaje(
+                    userId,
+                    request.token,
+                    request.tipo
+                )
+
+                call.respond(
+                    mapOf("message" to "Fichaje registrado")
+                )
+
+            } catch (e: IllegalArgumentException) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    e.message ?: "QR inválido"
+                )
+            }
         }
 
 

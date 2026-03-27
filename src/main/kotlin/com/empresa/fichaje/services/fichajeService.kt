@@ -12,7 +12,11 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.update
 import org.jetbrains.exposed.sql.innerJoin
 
-class FichajeService {
+class FichajeService(
+    private val qrService: QrService
+) {
+
+
 
     fun registrarFichaje(
         userId: Int,
@@ -20,14 +24,21 @@ class FichajeService {
         tipo: String
     ) {
 
-        // Aquí podrías validar token QR si quieres reforzarlo más
+        if (!qrService.isValid(token)) {
+
+            throw IllegalArgumentException(
+                "QR inválido o expirado"
+            )
+        }
 
         transaction {
 
             FichajesTable.insert {
 
                 it[FichajesTable.userId] = userId
-                it[FichajesTable.fechaHora] = System.currentTimeMillis()
+                it[FichajesTable.fechaHora] =
+                    System.currentTimeMillis()
+
                 it[FichajesTable.tipo] = tipo
             }
         }
