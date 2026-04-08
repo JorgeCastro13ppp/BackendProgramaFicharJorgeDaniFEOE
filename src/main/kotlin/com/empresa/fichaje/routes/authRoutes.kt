@@ -29,14 +29,28 @@ fun Route.authRoutes() {
 
         if (user != null) {
 
-            val token = JwtService.generateToken(user.id, user.role)
+            val token =
+                JwtService.generateToken(
+                    user.id,
+                    user.role
+                )
 
             call.respond(
-                mapOf("token" to token)
+
+                LoginResponse(
+                    message = "Login correcto",
+                    token = token,
+                    userId = user.id,
+                    role = user.role
+                )
             )
 
         } else {
-            call.respond(HttpStatusCode.Unauthorized, "Credenciales incorrectas")
+
+            call.respond(
+                HttpStatusCode.Unauthorized,
+                mapOf("error" to "Credenciales incorrectas")
+            )
         }
     }
 
