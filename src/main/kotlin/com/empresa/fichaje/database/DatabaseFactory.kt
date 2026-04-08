@@ -23,7 +23,8 @@ object DatabaseFactory {
         )
 
         transaction {
-            SchemaUtils.create(FichajesTable, UsuariosTable, DocumentosTable, VacacionesTable, FaltasTable)
+            SchemaUtils.create( UsuariosTable, DocumentosTable, VacacionesTable, FaltasTable,
+                FichajesEventosTable)
         }
     }
 }
