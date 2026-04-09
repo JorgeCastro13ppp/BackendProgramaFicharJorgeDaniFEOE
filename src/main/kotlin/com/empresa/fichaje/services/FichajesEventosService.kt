@@ -272,6 +272,83 @@ class FichajesEventosService {
         }
     }
 
+    fun obtenerUltimoEvento(userId: Int): FichajeResponse? {
+
+        return transaction {
+
+            (FichajesEventosTable innerJoin UsuariosTable)
+                .select {
+                    FichajesEventosTable.userId eq userId
+                }
+                .orderBy(
+                    FichajesEventosTable.timestamp,
+                    SortOrder.DESC
+                )
+                .limit(1)
+                .map {
+
+                    FichajeResponse(
+                        id = it[FichajesEventosTable.id],
+                        userId = it[FichajesEventosTable.userId],
+                        username = it[UsuariosTable.username],
+                        fechaHora = it[FichajesEventosTable.timestamp],
+                        tipo =
+                            "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
+                                .lowercase()
+                    )
+                }
+                .firstOrNull()
+        }
+    }
+
+    fun obtenerEventosHoy(userId: Int): List<FichajeResponse> {
+
+        return transaction {
+
+            val inicioDia =
+                java.time.LocalDate.now()
+                    .atStartOfDay(
+                        java.time.ZoneId.systemDefault()
+                    )
+                    .toInstant()
+                    .toEpochMilli()
+
+            val finDia =
+                java.time.LocalDate.now()
+                    .plusDays(1)
+                    .atStartOfDay(
+                        java.time.ZoneId.systemDefault()
+                    )
+                    .toInstant()
+                    .toEpochMilli() - 1
+
+
+            (FichajesEventosTable innerJoin UsuariosTable)
+                .select {
+
+                    (FichajesEventosTable.userId eq userId) and
+                            (FichajesEventosTable.timestamp greaterEq inicioDia) and
+                            (FichajesEventosTable.timestamp lessEq finDia)
+                }
+                .orderBy(
+                    FichajesEventosTable.timestamp,
+                    SortOrder.ASC
+                )
+                .map {
+
+                    FichajeResponse(
+                        id = it[FichajesEventosTable.id],
+                        userId = it[FichajesEventosTable.userId],
+                        username = it[UsuariosTable.username],
+                        fechaHora = it[FichajesEventosTable.timestamp],
+                        tipo =
+                            "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
+                                .lowercase()
+                    )
+                }
+        }
+    }
+
 
     private fun obtenerContextoUltimoEvento(userId: Int): String =
         FichajesEventosTable

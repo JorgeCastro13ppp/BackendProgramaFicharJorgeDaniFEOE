@@ -1,7 +1,6 @@
 package com.empresa.fichaje
 
 import com.empresa.fichaje.routes.*
-import com.empresa.fichaje.services.QrService
 import io.ktor.server.application.*
 import io.ktor.server.http.content.files
 import io.ktor.server.http.content.static

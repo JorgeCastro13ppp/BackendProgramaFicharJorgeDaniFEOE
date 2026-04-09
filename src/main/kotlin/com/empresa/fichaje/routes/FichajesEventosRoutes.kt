@@ -48,6 +48,59 @@ fun Route.fichajesEventosRoutes() {
                     )
                 }
             }
+
+            get("/ultimo/{userId}") {
+
+                val userId = call.parameters["userId"]?.toIntOrNull()
+
+                if (userId == null) {
+
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        mapOf("error" to "userId inválido")
+                    )
+
+                    return@get
+                }
+
+                val service = FichajesEventosService()
+
+                val ultimoEvento =
+                    service.obtenerUltimoEvento(userId)
+
+                if (ultimoEvento == null) {
+
+                    call.respond(
+                        HttpStatusCode.NotFound,
+                        mapOf("error" to "No hay fichajes para este usuario")
+                    )
+
+                    return@get
+                }
+
+                call.respond(ultimoEvento)
+            }
+
+            get("/hoy/{userId}") {
+
+                val userId =
+                    call.parameters["userId"]?.toIntOrNull()
+
+                if (userId == null) {
+
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        mapOf("error" to "userId inválido")
+                    )
+
+                    return@get
+                }
+
+                val eventosHoy =
+                    service.obtenerEventosHoy(userId)
+
+                call.respond(eventosHoy)
+            }
         }
 
 
