@@ -19,29 +19,44 @@ fun Route.faltasRoutes() {
         // 👨‍💼 Registrar falta a un trabajador (solo admin)
         post("/faltas/{userId}") {
 
-            val principal = call.principal<JWTPrincipal>()!!
+            try {
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
+                val principal = call.principal<JWTPrincipal>()!!
 
-            if (role != "admin") {
-                call.respond(HttpStatusCode.Forbidden, "No autorizado")
-                return@post
+                val role = principal.payload
+                    .getClaim("role")
+                    .asString()
+
+                if (role != "admin") {
+
+                    call.respond(HttpStatusCode.Forbidden)
+                    return@post
+                }
+
+                val userId =
+                    call.parameters["userId"]!!.toInt()
+
+                val request =
+                    call.receive<FaltaRequest>()
+
+                service.registrar(
+                    userId,
+                    request.fecha,
+                    request.tipo,
+                    request.descripcion
+                )
+
+                call.respond(
+                    mapOf("message" to "Falta registrada correctamente")
+                )
+
+            } catch (e: IllegalArgumentException) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("message" to e.message)
+                )
             }
-
-            val userId = call.parameters["userId"]!!.toInt()
-
-            val request = call.receive<FaltaRequest>()
-
-            service.registrar(
-                userId,
-                request.fecha,
-                request.tipo,
-                request.descripcion
-            )
-
-            call.respond(mapOf("message" to "Falta registrada"))
         }
 
 

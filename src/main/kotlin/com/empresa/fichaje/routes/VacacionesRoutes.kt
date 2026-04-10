@@ -22,6 +22,53 @@ fun Route.vacacionesRoutes() {
 
     authenticate("auth-jwt") {
 
+        post("/admin/vacaciones/{userId}") {
+
+            try {
+
+                val principal = call.principal<JWTPrincipal>()!!
+
+                val role = principal.payload
+                    .getClaim("role")
+                    .asString()
+
+                if (role != "admin") {
+
+                    call.respond(HttpStatusCode.Forbidden)
+                    return@post
+                }
+
+                val userId =
+                    call.parameters["userId"]?.toIntOrNull()
+
+                if (userId == null) {
+
+                    call.respond(HttpStatusCode.BadRequest)
+                    return@post
+                }
+
+                val request =
+                    call.receive<VacacionesRequest>()
+
+                service.solicitar(
+                    userId,
+                    request.fechaInicio,
+                    request.fechaFin
+                )
+
+                call.respond(
+                    mapOf("message" to "Vacaciones creadas correctamente")
+                )
+
+            } catch (e: IllegalArgumentException) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("message" to e.message)
+                )
+            }
+        }
+
         // 👷 Solicitar vacaciones
         post("/vacaciones") {
 

@@ -4,6 +4,7 @@ import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.database.VacacionesTable
 import com.empresa.fichaje.models.VacacionesRequest
 import com.empresa.fichaje.models.VacacionesResponse
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.innerJoin
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.select
@@ -21,12 +22,32 @@ class VacacionesService {
 
         transaction {
 
+            val existeSolapamiento =
+                VacacionesTable
+                    .select {
+                        (VacacionesTable.userId eq userId) and
+                                (
+                                        (VacacionesTable.fechaInicio lessEq fechaFin) and
+                                                (VacacionesTable.fechaFin greaterEq fechaInicio)
+                                        )
+                    }
+                    .count() > 0
+
+
+            if (existeSolapamiento) {
+
+                throw IllegalArgumentException(
+                    "El usuario ya tiene vacaciones en ese periodo"
+                )
+            }
+
+
             VacacionesTable.insert {
 
                 it[VacacionesTable.userId] = userId
                 it[VacacionesTable.fechaInicio] = fechaInicio
                 it[VacacionesTable.fechaFin] = fechaFin
-                it[VacacionesTable.estado] = "pendiente"
+                it[estado] = "pendiente"
             }
         }
     }

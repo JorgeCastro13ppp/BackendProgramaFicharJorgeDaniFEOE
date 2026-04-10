@@ -4,6 +4,7 @@ import com.empresa.fichaje.database.FaltasTable
 import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.FaltaResponse
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.insert
@@ -21,6 +22,26 @@ class FaltasService {
     ) {
 
         transaction {
+
+            val existeFaltaEseDia =
+
+                FaltasTable
+                    .select {
+
+                        (FaltasTable.userId eq userId) and
+                                (FaltasTable.fecha eq fecha)
+
+                    }
+                    .count() > 0
+
+
+            if (existeFaltaEseDia) {
+
+                throw IllegalArgumentException(
+                    "El usuario ya tiene una falta registrada ese día"
+                )
+            }
+
 
             FaltasTable.insert {
 

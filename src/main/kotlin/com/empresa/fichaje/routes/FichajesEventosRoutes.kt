@@ -1,8 +1,11 @@
 package com.empresa.fichaje.routes
 
+import com.empresa.fichaje.database.FichajesEventosTable.userId
+import com.empresa.fichaje.models.EstadoActualResponse
 import com.empresa.fichaje.models.FichajeEventoRequest
 import com.empresa.fichaje.models.FichajeEventoResponse
 import com.empresa.fichaje.services.FichajesEventosService
+import com.sun.tools.jdeprscan.Main.call
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.*
 import io.ktor.server.auth.authenticate
@@ -13,6 +16,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
 fun Route.fichajesEventosRoutes() {
+
 
     val service = FichajesEventosService()
 
@@ -218,6 +222,110 @@ fun Route.fichajesEventosRoutes() {
                     .resumenFichajesHoy()
 
             call.respond(resumen)
+        }
+
+        get("/estado/{userId}") {
+
+            val principal =
+                call.principal<JWTPrincipal>()
+
+            if (principal == null) {
+
+                call.respond(HttpStatusCode.Unauthorized)
+
+                return@get
+            }
+
+
+            val userIdParam =
+                call.parameters["userId"]?.toIntOrNull()
+
+            if (userIdParam == null) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "userId inválido")
+                )
+
+                return@get
+            }
+
+
+            val tokenUserId =
+                principal.payload
+                    .getClaim("userId")
+                    .asInt()
+
+            val role =
+                principal.payload
+                    .getClaim("role")
+                    .asString()
+
+
+            if (tokenUserId != userIdParam && role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden)
+
+                return@get
+            }
+
+
+            val estado =
+                service.obtenerEstadoDetallado(userIdParam)
+
+            call.respond(estado)
+        }
+
+        get("/siguiente-accion/{userId}") {
+
+            val principal =
+                call.principal<JWTPrincipal>()
+
+            if (principal == null) {
+
+                call.respond(HttpStatusCode.Unauthorized)
+
+                return@get
+            }
+
+
+            val userIdParam =
+                call.parameters["userId"]?.toIntOrNull()
+
+            if (userIdParam == null) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "userId inválido")
+                )
+
+                return@get
+            }
+
+
+            val tokenUserId =
+                principal.payload
+                    .getClaim("userId")
+                    .asInt()
+
+            val role =
+                principal.payload
+                    .getClaim("role")
+                    .asString()
+
+
+            if (tokenUserId != userIdParam && role != "admin") {
+
+                call.respond(HttpStatusCode.Forbidden)
+
+                return@get
+            }
+
+
+            val resultado =
+                service.obtenerAccionesPermitidas(userIdParam)
+
+            call.respond(resultado)
         }
     }
 }
