@@ -5,7 +5,6 @@ import com.empresa.fichaje.models.EstadoActualResponse
 import com.empresa.fichaje.models.FichajeEventoRequest
 import com.empresa.fichaje.models.FichajeEventoResponse
 import com.empresa.fichaje.services.FichajesEventosService
-import com.sun.tools.jdeprscan.Main.call
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.*
 import io.ktor.server.auth.authenticate
