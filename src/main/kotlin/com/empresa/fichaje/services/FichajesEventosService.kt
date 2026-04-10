@@ -304,19 +304,12 @@ class FichajesEventosService {
         nuevaAccion: String
     ) {
 
-        if (
-            estadoActual == EstadoLaboral.FUERA &&
-            nuevoContexto == "OBRA" &&
-            nuevaAccion == "ENTRADA"
-        ) {
-            return
-        }
-
         when (estadoActual) {
 
             EstadoLaboral.FUERA -> {
 
-                if (!(nuevoContexto == "TALLER"
+                if (
+                    !(nuevoContexto == "TALLER"
                             && nuevaAccion == "ENTRADA")
                 ) {
 
@@ -329,7 +322,18 @@ class FichajesEventosService {
 
             EstadoLaboral.EN_TALLER -> {
 
-                if (nuevaAccion !in listOf(
+                if (
+                    nuevaAccion == "INICIO_VIAJE"
+                    && nuevoContexto == "TALLER"
+                ) {
+
+                    throw Exception(
+                        "No puedes iniciar viaje hacia TALLER desde TALLER"
+                    )
+                }
+
+                if (
+                    nuevaAccion !in listOf(
                         "INICIO_DESCANSO",
                         "SALIDA",
                         "INICIO_VIAJE"
@@ -354,9 +358,31 @@ class FichajesEventosService {
             }
 
 
+            EstadoLaboral.VIAJANDO_A_REPARACION -> {
+
+                if (nuevaAccion != "FIN_VIAJE") {
+
+                    throw Exception(
+                        "Debes finalizar viaje antes de otra acción"
+                    )
+                }
+            }
+
+
             EstadoLaboral.EN_OBRA -> {
 
-                if (nuevaAccion !in listOf(
+                if (
+                    nuevaAccion == "INICIO_VIAJE"
+                    && nuevoContexto != "TALLER"
+                ) {
+
+                    throw Exception(
+                        "Desde OBRA solo puedes iniciar viaje hacia TALLER"
+                    )
+                }
+
+                if (
+                    nuevaAccion !in listOf(
                         "INICIO_DESCANSO",
                         "SALIDA",
                         "INICIO_VIAJE"
@@ -372,7 +398,18 @@ class FichajesEventosService {
 
             EstadoLaboral.EN_REPARACION -> {
 
-                if (nuevaAccion !in listOf(
+                if (
+                    nuevaAccion == "INICIO_VIAJE"
+                    && nuevoContexto != "TALLER"
+                ) {
+
+                    throw Exception(
+                        "Desde REPARACION solo puedes iniciar viaje hacia TALLER"
+                    )
+                }
+
+                if (
+                    nuevaAccion !in listOf(
                         "INICIO_DESCANSO",
                         "SALIDA",
                         "INICIO_VIAJE"
@@ -406,9 +443,6 @@ class FichajesEventosService {
                     )
                 }
             }
-
-
-            else -> {}
         }
     }
 
@@ -591,5 +625,4 @@ class FichajesEventosService {
             accionesPermitidas = accionesPermitidas
         )
     }
-
 }
