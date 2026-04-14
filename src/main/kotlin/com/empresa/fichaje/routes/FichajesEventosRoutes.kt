@@ -204,6 +204,28 @@ fun Route.fichajesEventosRoutes() {
 
                 call.respond(resultado)
             }
+            get("/horas-hoy/{userId}") {
+
+                val userId =
+                    call.parameters["userId"]?.toIntOrNull()
+
+                if (userId == null) {
+
+                    call.respond(HttpStatusCode.BadRequest)
+                    return@get
+                }
+
+                val ms =
+                    service.calcularHorasTrabajadasHoy(userId)
+
+                call.respond(
+
+                    mapOf(
+                        "milisegundos" to ms,
+                        "formato" to service.formatearTiempo(ms)
+                    )
+                )
+            }
         }
 
 

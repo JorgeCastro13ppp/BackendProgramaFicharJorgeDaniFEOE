@@ -716,4 +716,105 @@ class FichajesEventosService {
         )
     }
 
+    fun calcularHorasTrabajadasHoy(userId: Int): Long {
+
+        val eventos = transaction {
+
+            val inicioDia =
+                java.time.LocalDate.now()
+                    .atStartOfDay(java.time.ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+
+            val finDia =
+                java.time.LocalDate.now()
+                    .plusDays(1)
+                    .atStartOfDay(java.time.ZoneId.systemDefault())
+                    .toInstant()
+                    .toEpochMilli()
+
+            FichajesEventosTable
+                .select {
+
+                    (FichajesEventosTable.userId eq userId) and
+                            (FichajesEventosTable.timestamp greaterEq inicioDia) and
+                            (FichajesEventosTable.timestamp less finDia)
+
+                }
+                .orderBy(FichajesEventosTable.timestamp to SortOrder.ASC)
+                .map {
+
+                    Triple(
+                        it[FichajesEventosTable.timestamp],
+                        it[FichajesEventosTable.contexto],
+                        it[FichajesEventosTable.accion]
+                    )
+                }
+        }
+
+        var trabajando = false
+        var enDescanso = false
+
+        var inicioTrabajo: Long? = null
+        var totalTiempo = 0L
+
+        eventos.forEach { (timestamp, contexto, accion) ->
+
+            when (accion) {
+
+                "ENTRADA" -> {
+
+                    if (!trabajando) {
+
+                        trabajando = true
+                        inicioTrabajo = timestamp
+                    }
+                }
+
+                "SALIDA" -> {
+
+                    if (trabajando && inicioTrabajo != null) {
+
+                        totalTiempo += timestamp - inicioTrabajo!!
+                        trabajando = false
+                        inicioTrabajo = null
+                    }
+                }
+
+                "INICIO_DESCANSO" -> {
+
+                    if (trabajando && !enDescanso && inicioTrabajo != null) {
+
+                        totalTiempo += timestamp - inicioTrabajo!!
+                        enDescanso = true
+                    }
+                }
+
+                "FIN_DESCANSO" -> {
+
+                    if (trabajando && enDescanso) {
+
+                        inicioTrabajo = timestamp
+                        enDescanso = false
+                    }
+                }
+            }
+        }
+
+        if (trabajando && inicioTrabajo != null) {
+
+            totalTiempo += System.currentTimeMillis() - inicioTrabajo!!
+        }
+
+        return totalTiempo
+    }
+
+    fun formatearTiempo(ms: Long): String {
+
+        val minutos = ms / 60000
+        val horas = minutos / 60
+        val restoMin = minutos % 60
+
+        return "${horas}h ${restoMin}min"
+    }
 }

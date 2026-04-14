@@ -14,54 +14,71 @@ fun Route.uploadRoutes() {
 
         val multipart = call.receiveMultipart()
 
+        val userId =
+            call.request.queryParameters["userId"] ?: "general"
+
         var fileName: String? = null
         var error = false
+
 
         multipart.forEachPart { part ->
 
             if (part is PartData.FileItem) {
 
-                val originalFileName = part.originalFileName ?: "archivo.pdf"
+                val originalFileName =
+                    part.originalFileName ?: "archivo.pdf"
 
-                if (originalFileName == null) {
-                    error = true
-                } else {
+                val uploadDir =
+                    File("uploads/documentos/$userId")
 
-                    val uploadDir = File("uploads")
-
-                    if (!uploadDir.exists()) {
-                        uploadDir.mkdirs()
-                    }
-
-                    val uniqueFileName =
-                        "${System.currentTimeMillis()}_$originalFileName"
-
-                    val fileBytes = part.streamProvider().readBytes()
-
-                    val file = File(uploadDir, uniqueFileName)
-
-                    file.writeBytes(fileBytes)
-
-                    fileName = uniqueFileName
+                if (!uploadDir.exists()) {
+                    uploadDir.mkdirs()
                 }
+
+                val uniqueFileName =
+                    "${System.currentTimeMillis()}_$originalFileName"
+
+                val fileBytes =
+                    part.streamProvider().readBytes()
+
+                val file =
+                    File(uploadDir, uniqueFileName)
+
+                file.writeBytes(fileBytes)
+
+                fileName = uniqueFileName
             }
 
             part.dispose()
         }
 
+
         if (error) {
-            call.respond(HttpStatusCode.BadRequest, "Nombre de archivo inválido")
+
+            call.respond(
+                HttpStatusCode.BadRequest,
+                "Nombre de archivo inválido"
+            )
+
             return@post
         }
+
 
         if (fileName == null) {
-            call.respond(HttpStatusCode.BadRequest, "Archivo no recibido")
+
+            call.respond(
+                HttpStatusCode.BadRequest,
+                "Archivo no recibido"
+            )
+
             return@post
         }
 
+
         call.respond(
+
             mapOf(
-                "url" to "/files/$fileName"
+                "url" to "documentos/$userId/$fileName"
             )
         )
     }
