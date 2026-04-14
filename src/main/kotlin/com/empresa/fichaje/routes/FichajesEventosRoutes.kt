@@ -1,12 +1,9 @@
 package com.empresa.fichaje.routes
 
-import com.empresa.fichaje.database.FichajesEventosTable.userId
-import com.empresa.fichaje.models.EstadoActualResponse
 import com.empresa.fichaje.models.FichajeEventoRequest
 import com.empresa.fichaje.models.FichajeEventoResponse
 import com.empresa.fichaje.services.FichajesEventosService
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.*
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.principal

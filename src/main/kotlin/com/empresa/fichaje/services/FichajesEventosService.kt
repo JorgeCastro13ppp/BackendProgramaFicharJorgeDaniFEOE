@@ -1,5 +1,6 @@
 package com.empresa.fichaje.services
 
+import EstadoLaboral
 import com.empresa.fichaje.database.FichajesEventosTable
 import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.AccionFichaje
@@ -20,21 +21,27 @@ import org.jetbrains.exposed.sql.insertAndGetId
 
 class FichajesEventosService {
 
-    fun crearFichajeEvento(request: FichajeEventoRequest): Int {
+    fun crearFichajeEvento(
+        request: FichajeEventoRequest
+    ): Int {
 
         val estadoActual =
             obtenerEstadoActual(request.userId)
 
+
+        // Validar transición de estado
         validarTransicionEstado(
             estadoActual,
-            request.contexto.name,
             request.accion.name
         )
 
+
+        // (Opcional) validar coherencia de contexto
         validarCambioContexto(
             estadoActual,
             request.contexto.name
         )
+
 
         return transaction {
 
@@ -254,249 +261,245 @@ class FichajesEventosService {
     }
 
     fun calcularEstadoActual(
+        estadoAnterior: EstadoLaboral,
         contexto: String,
         accion: String
     ): EstadoLaboral {
 
-        return when {
+        return when (estadoAnterior) {
 
-            accion == "ENTRADA" && contexto == "TALLER" ->
-                EstadoLaboral.EN_TALLER
+            EstadoLaboral.FUERA -> {
 
-
-            accion == "ENTRADA" && contexto == "OBRA" ->
-                EstadoLaboral.EN_OBRA
-
-
-            accion == "ENTRADA" && contexto == "REPARACION" ->
-                EstadoLaboral.EN_REPARACION
+                if (accion == "ENTRADA" && contexto == "TALLER")
+                    EstadoLaboral.EN_TALLER
+                else
+                    EstadoLaboral.FUERA
+            }
 
 
-            accion == "INICIO_DESCANSO" ->
-                EstadoLaboral.EN_DESCANSO
+            EstadoLaboral.EN_TALLER -> when {
+
+                accion == "INICIO_DESCANSO" ->
+                    EstadoLaboral.DESCANSO_TALLER
+
+                accion == "SALIDA" ->
+                    EstadoLaboral.FUERA
+
+                accion == "INICIO_VIAJE" && contexto == "OBRA" ->
+                    EstadoLaboral.VIAJE_IDA_OBRA
+
+                accion == "INICIO_VIAJE" && contexto == "REPARACION" ->
+                    EstadoLaboral.VIAJE_IDA_REPARACION
+
+                else -> estadoAnterior
+            }
 
 
-            accion == "INICIO_VIAJE" && contexto == "OBRA" ->
-                EstadoLaboral.VIAJANDO_A_OBRA
+            EstadoLaboral.DESCANSO_TALLER -> {
+
+                if (accion == "FIN_DESCANSO")
+                    EstadoLaboral.EN_TALLER
+                else
+                    estadoAnterior
+            }
 
 
-            accion == "INICIO_VIAJE" && contexto == "REPARACION" ->
-                EstadoLaboral.VIAJANDO_A_REPARACION
+            EstadoLaboral.VIAJE_IDA_OBRA -> {
+
+                if (accion == "FIN_VIAJE")
+                    EstadoLaboral.ESPERANDO_ENTRADA_OBRA
+                else
+                    estadoAnterior
+            }
 
 
-            accion == "INICIO_VIAJE" && contexto == "TALLER" ->
-                EstadoLaboral.VIAJANDO_A_TALLER
+            EstadoLaboral.ESPERANDO_ENTRADA_OBRA -> {
+
+                if (accion == "ENTRADA")
+                    EstadoLaboral.EN_OBRA
+                else
+                    estadoAnterior
+            }
 
 
-            // 👇 CAMBIO IMPORTANTE AQUÍ
+            EstadoLaboral.EN_OBRA -> when {
 
-            accion == "FIN_VIAJE" && contexto == "OBRA" ->
-                EstadoLaboral.LLEGADO_OBRA
+                accion == "INICIO_DESCANSO" ->
+                    EstadoLaboral.DESCANSO_OBRA
 
+                accion == "SALIDA" ->
+                    EstadoLaboral.FIN_JORNADA_OBRA
 
-            accion == "FIN_VIAJE" && contexto == "REPARACION" ->
-                EstadoLaboral.LLEGADO_REPARACION
-
-
-            accion == "FIN_VIAJE" && contexto == "TALLER" ->
-                EstadoLaboral.EN_TALLER
+                else -> estadoAnterior
+            }
 
 
-            accion == "SALIDA" ->
-                EstadoLaboral.FUERA
+            EstadoLaboral.DESCANSO_OBRA -> {
+
+                if (accion == "FIN_DESCANSO")
+                    EstadoLaboral.EN_OBRA
+                else
+                    estadoAnterior
+            }
 
 
-            else ->
-                EstadoLaboral.FUERA
+            EstadoLaboral.FIN_JORNADA_OBRA -> when {
+
+                accion == "ENTRADA" ->
+                    EstadoLaboral.EN_OBRA
+
+                accion == "INICIO_VIAJE" && contexto == "TALLER" ->
+                    EstadoLaboral.VIAJE_VUELTA_TALLER
+
+                else -> estadoAnterior
+            }
+
+
+            EstadoLaboral.VIAJE_VUELTA_TALLER -> {
+
+                if (accion == "FIN_VIAJE")
+                    EstadoLaboral.EN_TALLER
+                else
+                    estadoAnterior
+            }
+
+
+            EstadoLaboral.VIAJE_IDA_REPARACION -> {
+
+                if (accion == "FIN_VIAJE")
+                    EstadoLaboral.ESPERANDO_ENTRADA_REPARACION
+                else
+                    estadoAnterior
+            }
+
+
+            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION -> {
+
+                if (accion == "ENTRADA")
+                    EstadoLaboral.EN_REPARACION
+                else
+                    estadoAnterior
+            }
+
+
+            EstadoLaboral.EN_REPARACION -> when {
+
+                accion == "INICIO_DESCANSO" ->
+                    EstadoLaboral.DESCANSO_REPARACION
+
+                accion == "SALIDA" ->
+                    EstadoLaboral.FIN_JORNADA_REPARACION
+
+                else -> estadoAnterior
+            }
+
+
+            EstadoLaboral.DESCANSO_REPARACION -> {
+
+                if (accion == "FIN_DESCANSO")
+                    EstadoLaboral.EN_REPARACION
+                else
+                    estadoAnterior
+            }
+
+
+            EstadoLaboral.FIN_JORNADA_REPARACION -> when {
+
+                accion == "ENTRADA" ->
+                    EstadoLaboral.EN_REPARACION
+
+                accion == "INICIO_VIAJE" && contexto == "TALLER" ->
+                    EstadoLaboral.VIAJE_VUELTA_TALLER
+
+                else -> estadoAnterior
+            }
         }
     }
 
-    fun obtenerEstadoActual(userId: Int): EstadoLaboral {
+    fun obtenerEstadoActual(
+        userId: Int
+    ): EstadoLaboral {
 
-        val ultimo = obtenerUltimoEventoRaw(userId)
-            ?: return EstadoLaboral.FUERA
+        val eventos = transaction {
 
-        return calcularEstadoActual(
-            ultimo.first,
-            ultimo.second
-        )
+            FichajesEventosTable
+                .select {
+                    FichajesEventosTable.userId eq userId
+                }
+                .orderBy(
+                    FichajesEventosTable.timestamp,
+                    SortOrder.ASC
+                )
+                .map {
+
+                    it[FichajesEventosTable.contexto] to
+                            it[FichajesEventosTable.accion]
+                }
+        }
+
+        if (eventos.isEmpty())
+            return EstadoLaboral.FUERA
+
+
+        var estadoActual =
+            EstadoLaboral.FUERA
+
+
+        eventos.forEach { (contexto, accion) ->
+
+            estadoActual =
+                calcularEstadoActual(
+                    estadoActual,
+                    contexto,
+                    accion
+                )
+        }
+
+        return estadoActual
     }
 
     fun validarTransicionEstado(
         estadoActual: EstadoLaboral,
-        nuevoContexto: String,
-        nuevaAccion: String
+        accion: String
     ) {
 
-        when (estadoActual) {
+        val permitidas = when (estadoActual) {
 
-            EstadoLaboral.FUERA -> {
+            EstadoLaboral.FUERA ->
+                listOf("ENTRADA")
 
-                if (
-                    !(nuevoContexto == "TALLER"
-                            && nuevaAccion == "ENTRADA")
-                ) {
+            EstadoLaboral.EN_TALLER ->
+                listOf("INICIO_DESCANSO", "SALIDA", "INICIO_VIAJE")
 
-                    throw Exception(
-                        "Debes iniciar la jornada entrando en TALLER"
-                    )
-                }
-            }
+            EstadoLaboral.DESCANSO_TALLER ->
+                listOf("FIN_DESCANSO")
 
+            EstadoLaboral.VIAJE_IDA_OBRA,
+            EstadoLaboral.VIAJE_IDA_REPARACION,
+            EstadoLaboral.VIAJE_VUELTA_TALLER ->
+                listOf("FIN_VIAJE")
 
-            EstadoLaboral.EN_TALLER -> {
+            EstadoLaboral.ESPERANDO_ENTRADA_OBRA,
+            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION ->
+                listOf("ENTRADA")
 
-                if (
-                    nuevaAccion == "INICIO_VIAJE"
-                    && nuevoContexto == "TALLER"
-                ) {
+            EstadoLaboral.EN_OBRA,
+            EstadoLaboral.EN_REPARACION ->
+                listOf("INICIO_DESCANSO", "SALIDA")
 
-                    throw Exception(
-                        "No puedes iniciar viaje hacia TALLER desde TALLER"
-                    )
-                }
+            EstadoLaboral.DESCANSO_OBRA,
+            EstadoLaboral.DESCANSO_REPARACION ->
+                listOf("FIN_DESCANSO")
 
-                if (
-                    nuevaAccion !in listOf(
-                        "INICIO_DESCANSO",
-                        "SALIDA",
-                        "INICIO_VIAJE"
-                    )
-                ) {
-
-                    throw Exception(
-                        "Acción no válida desde TALLER"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.VIAJANDO_A_OBRA -> {
-
-                if (nuevaAccion != "FIN_VIAJE") {
-
-                    throw Exception(
-                        "Debes finalizar viaje antes de otra acción"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.VIAJANDO_A_REPARACION -> {
-
-                if (nuevaAccion != "FIN_VIAJE") {
-
-                    throw Exception(
-                        "Debes finalizar viaje antes de otra acción"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.LLEGADO_OBRA -> {
-
-                if (
-                    nuevaAccion != "ENTRADA"
-                    || nuevoContexto != "OBRA"
-                ) {
-
-                    throw Exception(
-                        "Debes registrar ENTRADA_OBRA tras llegar a la obra"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.LLEGADO_REPARACION -> {
-
-                if (
-                    nuevaAccion != "ENTRADA"
-                    || nuevoContexto != "REPARACION"
-                ) {
-
-                    throw Exception(
-                        "Debes registrar ENTRADA_REPARACION tras llegar"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.EN_OBRA -> {
-
-                if (
-                    nuevaAccion == "INICIO_VIAJE"
-                    && nuevoContexto != "TALLER"
-                ) {
-
-                    throw Exception(
-                        "Desde OBRA solo puedes iniciar viaje hacia TALLER"
-                    )
-                }
-
-                if (
-                    nuevaAccion !in listOf(
-                        "INICIO_DESCANSO",
-                        "SALIDA",
-                        "INICIO_VIAJE"
-                    )
-                ) {
-
-                    throw Exception(
-                        "Acción inválida en OBRA"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.EN_REPARACION -> {
-
-                if (
-                    nuevaAccion == "INICIO_VIAJE"
-                    && nuevoContexto != "TALLER"
-                ) {
-
-                    throw Exception(
-                        "Desde REPARACION solo puedes iniciar viaje hacia TALLER"
-                    )
-                }
-
-                if (
-                    nuevaAccion !in listOf(
-                        "INICIO_DESCANSO",
-                        "SALIDA",
-                        "INICIO_VIAJE"
-                    )
-                ) {
-
-                    throw Exception(
-                        "Acción inválida en REPARACION"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.EN_DESCANSO -> {
-
-                if (nuevaAccion != "FIN_DESCANSO") {
-
-                    throw Exception(
-                        "Debes finalizar descanso antes de continuar"
-                    )
-                }
-            }
-
-
-            EstadoLaboral.VIAJANDO_A_TALLER -> {
-
-                if (nuevaAccion != "FIN_VIAJE") {
-
-                    throw Exception(
-                        "Debes finalizar viaje antes de continuar"
-                    )
-                }
-            }
+            EstadoLaboral.FIN_JORNADA_OBRA,
+            EstadoLaboral.FIN_JORNADA_REPARACION ->
+                listOf("ENTRADA", "INICIO_VIAJE")
         }
+
+        if (accion !in permitidas)
+            throw Exception("Acción no permitida desde el estado actual")
     }
+
 
     fun validarCambioContexto(
         estadoActual: EstadoLaboral,
@@ -550,12 +553,10 @@ class FichajesEventosService {
                 .firstOrNull()
         }
     }
-    fun obtenerEstadoActualComoTexto(userId: Int): String {
 
-        return obtenerEstadoActual(userId).name
-    }
-
-    fun obtenerEstadoDetallado(userId: Int): EstadoActualResponse {
+    fun obtenerEstadoDetallado(
+        userId: Int
+    ): EstadoActualResponse {
 
         val ultimoEvento = transaction {
 
@@ -571,11 +572,16 @@ class FichajesEventosService {
                 .firstOrNull()
         }
 
+
+        val estadoActual =
+            obtenerEstadoActual(userId)
+
+
         if (ultimoEvento == null) {
 
             return EstadoActualResponse(
 
-                estado = EstadoLaboral.FUERA.name,
+                estado = estadoActual.name,
 
                 contexto = null,
 
@@ -585,32 +591,19 @@ class FichajesEventosService {
             )
         }
 
-        val contexto =
-            ultimoEvento[FichajesEventosTable.contexto]
-
-        val accion =
-            ultimoEvento[FichajesEventosTable.accion]
-
-        val timestamp =
-            ultimoEvento[FichajesEventosTable.timestamp]
-
-
-        val estado =
-            calcularEstadoActual(
-                contexto,
-                accion
-            ).name
-
 
         return EstadoActualResponse(
 
-            estado = estado,
+            estado = estadoActual.name,
 
-            contexto = contexto,
+            contexto =
+                ultimoEvento[FichajesEventosTable.contexto],
 
-            accion = accion,
+            accion =
+                ultimoEvento[FichajesEventosTable.accion],
 
-            timestamp = timestamp
+            timestamp =
+                ultimoEvento[FichajesEventosTable.timestamp]
         )
     }
 
@@ -618,75 +611,109 @@ class FichajesEventosService {
         userId: Int
     ): SiguientesAccionesResponse {
 
-        val estadoActual =
-            obtenerEstadoActual(userId)
+        val estado = obtenerEstadoActual(userId)
 
+        val accionesTaller = mutableListOf<String>()
+        val accionesObra = mutableListOf<String>()
+        val accionesReparacion = mutableListOf<String>()
 
-        val accionesPermitidas = when (estadoActual) {
+        when (estado) {
 
-            EstadoLaboral.FUERA -> listOf(
-                "ENTRADA_TALLER"
-            )
+            EstadoLaboral.FUERA -> {
 
+                accionesTaller += "ENTRADA_TALLER"
+            }
 
-            EstadoLaboral.EN_TALLER -> listOf(
-                "INICIO_DESCANSO",
-                "SALIDA_TALLER",
-                "INICIO_VIAJE_OBRA",
-                "INICIO_VIAJE_REPARACION"
-            )
+            EstadoLaboral.EN_TALLER -> {
 
+                accionesTaller += listOf(
+                    "INICIO_DESCANSO_TALLER",
+                    "SALIDA_TALLER"
+                )
 
-            EstadoLaboral.VIAJANDO_A_OBRA -> listOf(
-                "FIN_VIAJE_OBRA"
-            )
+                accionesObra += "INICIO_VIAJE_OBRA"
+                accionesReparacion += "INICIO_VIAJE_REPARACION"
+            }
 
+            EstadoLaboral.DESCANSO_TALLER -> {
 
-            EstadoLaboral.VIAJANDO_A_REPARACION -> listOf(
-                "FIN_VIAJE_REPARACION"
-            )
+                accionesTaller += "FIN_DESCANSO_TALLER"
+            }
 
+            EstadoLaboral.VIAJE_IDA_OBRA -> {
 
-            EstadoLaboral.LLEGADO_OBRA -> listOf(
-                "ENTRADA_OBRA"
-            )
+                accionesObra += "FIN_VIAJE_OBRA"
+            }
 
+            EstadoLaboral.ESPERANDO_ENTRADA_OBRA -> {
 
-            EstadoLaboral.LLEGADO_REPARACION -> listOf(
-                "ENTRADA_REPARACION"
-            )
+                accionesObra += "ENTRADA_OBRA"
+            }
 
+            EstadoLaboral.EN_OBRA -> {
 
-            EstadoLaboral.EN_OBRA -> listOf(
-                "INICIO_DESCANSO",
-                "SALIDA_OBRA",
-                "INICIO_VIAJE_TALLER"
-            )
+                accionesObra += listOf(
+                    "INICIO_DESCANSO_OBRA",
+                    "SALIDA_OBRA"
+                )
+            }
 
+            EstadoLaboral.DESCANSO_OBRA -> {
 
-            EstadoLaboral.EN_REPARACION -> listOf(
-                "INICIO_DESCANSO",
-                "SALIDA_REPARACION",
-                "INICIO_VIAJE_TALLER"
-            )
+                accionesObra += "FIN_DESCANSO_OBRA"
+            }
 
+            EstadoLaboral.FIN_JORNADA_OBRA -> {
 
-            EstadoLaboral.EN_DESCANSO -> listOf(
-                "FIN_DESCANSO"
-            )
+                accionesObra += "ENTRADA_OBRA"
+                accionesTaller += "INICIO_VIAJE_TALLER"
+            }
 
+            EstadoLaboral.VIAJE_VUELTA_TALLER -> {
 
-            EstadoLaboral.VIAJANDO_A_TALLER -> listOf(
-                "FIN_VIAJE_TALLER"
-            )
+                accionesTaller += "FIN_VIAJE_TALLER"
+            }
+
+            EstadoLaboral.VIAJE_IDA_REPARACION -> {
+
+                accionesReparacion += "FIN_VIAJE_REPARACION"
+            }
+
+            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION -> {
+
+                accionesReparacion += "ENTRADA_REPARACION"
+            }
+
+            EstadoLaboral.EN_REPARACION -> {
+
+                accionesReparacion += listOf(
+                    "INICIO_DESCANSO_REPARACION",
+                    "SALIDA_REPARACION"
+                )
+            }
+
+            EstadoLaboral.DESCANSO_REPARACION -> {
+
+                accionesReparacion += "FIN_DESCANSO_REPARACION"
+            }
+
+            EstadoLaboral.FIN_JORNADA_REPARACION -> {
+
+                accionesReparacion += "ENTRADA_REPARACION"
+                accionesTaller += "INICIO_VIAJE_TALLER"
+            }
         }
-
 
         return SiguientesAccionesResponse(
 
-            estado = estadoActual.name,
+            estado = estado.name,
 
-            accionesPermitidas = accionesPermitidas
+            accionesTaller = accionesTaller,
+
+            accionesObra = accionesObra,
+
+            accionesReparacion = accionesReparacion
         )
     }
+
 }
