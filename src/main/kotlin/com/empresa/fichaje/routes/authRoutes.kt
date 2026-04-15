@@ -78,16 +78,36 @@ fun Route.authRoutes() {
 
             val principal = call.principal<JWTPrincipal>()!!
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
+            val role =
+                principal.payload
+                    .getClaim("role")
+                    .asString()
 
             if (role != "admin") {
+
                 call.respond(HttpStatusCode.Forbidden)
+
                 return@get
             }
 
-            val usuarios = authService.obtenerUsuarios()
+
+            val roleFilter =
+                call.request.queryParameters["role"]
+
+            val sortBy =
+                call.request.queryParameters["sortBy"]
+
+            val order =
+                call.request.queryParameters["order"]
+
+
+            val usuarios =
+                authService.obtenerUsuarios(
+                    roleFilter,
+                    sortBy,
+                    order
+                )
+
 
             call.respond(usuarios)
         }

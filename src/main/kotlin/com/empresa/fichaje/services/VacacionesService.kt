@@ -4,7 +4,9 @@ import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.database.VacacionesTable
 import com.empresa.fichaje.models.VacacionesRequest
 import com.empresa.fichaje.models.VacacionesResponse
+import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.innerJoin
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.select
@@ -54,13 +56,15 @@ class VacacionesService {
 
     fun obtener(
         userId: Int,
-        role: String
+        role: String,
+        estado: String? = null,
+        sortBy: String? = null,
+        order: String? = null
     ): List<VacacionesResponse> {
 
         return transaction {
 
-            val query = if (role == "admin") {
-
+            var query =
                 VacacionesTable
                     .innerJoin(
                         UsuariosTable,
@@ -69,18 +73,71 @@ class VacacionesService {
                     )
                     .selectAll()
 
-            } else {
 
-                VacacionesTable
-                    .innerJoin(
-                        UsuariosTable,
-                        { VacacionesTable.userId },
-                        { UsuariosTable.id }
-                    )
-                    .select {
+            /*
+            ========================
+            FILTRO POR ROL
+            ========================
+            */
+
+            if (role != "admin") {
+
+                query =
+                    query.andWhere {
                         VacacionesTable.userId eq userId
                     }
             }
+
+
+            /*
+            ========================
+            FILTRO POR ESTADO
+            ========================
+            */
+
+            if (estado != null) {
+
+                query =
+                    query.andWhere {
+                        VacacionesTable.estado eq estado
+                    }
+            }
+
+
+            /*
+            ========================
+            ORDENACIÓN
+            ========================
+            */
+
+            val sortColumn = when (sortBy) {
+
+                "inicio" -> VacacionesTable.fechaInicio
+                "fin" -> VacacionesTable.fechaFin
+                "usuario" -> UsuariosTable.username
+                "estado" -> VacacionesTable.estado
+                "id" -> VacacionesTable.id
+
+                else -> VacacionesTable.fechaInicio
+            }
+
+
+            val sortOrder =
+                if (order == "desc")
+                    SortOrder.DESC
+                else
+                    SortOrder.ASC
+
+
+            query =
+                query.orderBy(sortColumn to sortOrder)
+
+
+            /*
+            ========================
+            RESPUESTA FINAL
+            ========================
+            */
 
             query.map {
 

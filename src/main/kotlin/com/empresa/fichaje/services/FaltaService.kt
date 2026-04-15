@@ -3,14 +3,17 @@ package com.empresa.fichaje.services
 import com.empresa.fichaje.database.FaltasTable
 import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.FaltaResponse
+import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.innerJoin
 import org.jetbrains.exposed.sql.select
+
 
 class FaltasService {
 
@@ -54,30 +57,92 @@ class FaltasService {
     }
 
 
-    fun obtener(userId: Int, role: String): List<FaltaResponse> {
+    fun obtener(
+        userId: Int,
+        role: String,
+        tipo: String? = null,
+        sortBy: String? = null,
+        order: String? = null
+    ): List<FaltaResponse> {
 
         return transaction {
 
-            val query = FaltasTable
-                .innerJoin(
-                    UsuariosTable,
-                    { FaltasTable.userId },
-                    { UsuariosTable.id }
-                )
-                .selectAll()
+            var query =
+                FaltasTable
+                    .innerJoin(
+                        UsuariosTable,
+                        { FaltasTable.userId },
+                        { UsuariosTable.id }
+                    )
+                    .selectAll()
 
-            val filteredQuery = if (role == "admin") {
 
-                query
+            /*
+            ========================
+            FILTRO POR ROL
+            ========================
+            */
 
-            } else {
+            if (role != "admin") {
 
-                query.where {
-                    FaltasTable.userId eq userId
-                }
+                query =
+                    query.andWhere {
+                        FaltasTable.userId eq userId
+                    }
             }
 
-            filteredQuery.map {
+
+            /*
+            ========================
+            FILTRO POR TIPO
+            ========================
+            */
+
+            if (tipo != null) {
+
+                query =
+                    query.andWhere {
+                        FaltasTable.tipo eq tipo
+                    }
+            }
+
+
+            /*
+            ========================
+            ORDENACIÓN
+            ========================
+            */
+
+            val sortColumn = when (sortBy) {
+
+                "fecha" -> FaltasTable.fecha
+                "usuario" -> UsuariosTable.username
+                "tipo" -> FaltasTable.tipo
+                "id" -> FaltasTable.id
+
+                else -> FaltasTable.fecha
+            }
+
+
+            val sortOrder =
+
+                if (order == "desc")
+                    SortOrder.DESC
+                else
+                    SortOrder.ASC
+
+
+            query =
+                query.orderBy(sortColumn to sortOrder)
+
+
+            /*
+            ========================
+            RESPUESTA FINAL
+            ========================
+            */
+
+            query.map {
 
                 FaltaResponse(
                     id = it[FaltasTable.id],
@@ -97,6 +162,7 @@ class FaltasService {
         transaction {
 
             FaltasTable.deleteWhere {
+
                 FaltasTable.id eq id
             }
         }

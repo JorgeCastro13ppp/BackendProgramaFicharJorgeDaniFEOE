@@ -7,6 +7,7 @@ import com.empresa.fichaje.database.UsuariosTable
 import com.empresa.fichaje.models.User
 import com.empresa.fichaje.models.UsuarioResponse
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -52,11 +53,61 @@ class AuthService {
         }
     }
 
-    fun obtenerUsuarios(): List<UsuarioResponse> {
+    fun obtenerUsuarios(
+        role: String? = null,
+        sortBy: String? = null,
+        order: String? = null
+    ): List<UsuarioResponse> {
 
         return transaction {
 
-            UsuariosTable.selectAll().map {
+            var query =
+                UsuariosTable.selectAll()
+
+
+            /*
+            ========================
+            FILTRO POR ROL
+            ========================
+            */
+
+            if (role != null && role != "todos") {
+
+                query =
+                    query.andWhere {
+                        UsuariosTable.role eq role
+                    }
+            }
+
+
+            /*
+            ========================
+            ORDENACIÓN
+            ========================
+            */
+
+            val sortColumn = when (sortBy) {
+
+                "username" -> UsuariosTable.username
+                "role" -> UsuariosTable.role
+                "id" -> UsuariosTable.id
+
+                else -> UsuariosTable.username
+            }
+
+
+            val sortOrder =
+                if (order == "desc")
+                    org.jetbrains.exposed.sql.SortOrder.DESC
+                else
+                    org.jetbrains.exposed.sql.SortOrder.ASC
+
+
+            query =
+                query.orderBy(sortColumn to sortOrder)
+
+
+            query.map {
 
                 UsuarioResponse(
                     id = it[UsuariosTable.id],

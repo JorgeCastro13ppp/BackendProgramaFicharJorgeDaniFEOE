@@ -11,6 +11,7 @@ import com.empresa.fichaje.models.SiguientesAccionesResponse
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.and
+import org.jetbrains.exposed.sql.andWhere
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.select
@@ -61,7 +62,87 @@ class FichajesEventosService {
         }
     }
 
+    fun obtenerFichajesParaAdmin(
+        userId: Int? = null,
+        sortBy: String? = null,
+        order: String? = null
+    ): List<FichajeResponse> {
 
+        return transaction {
+
+            var query =
+                (FichajesEventosTable innerJoin UsuariosTable)
+                    .selectAll()
+
+
+            /*
+            ========================
+            FILTRO POR USUARIO
+            ========================
+            */
+
+            if (userId != null) {
+
+                query =
+                    query.andWhere {
+                        FichajesEventosTable.userId eq userId
+                    }
+            }
+
+
+            /*
+            ========================
+            ORDENACIÓN
+            ========================
+            */
+
+            val sortColumn = when (sortBy) {
+
+                "fecha" -> FichajesEventosTable.timestamp
+                "hora" -> FichajesEventosTable.timestamp
+                "usuario" -> UsuariosTable.username
+                "accion" -> FichajesEventosTable.accion
+                "contexto" -> FichajesEventosTable.contexto
+                "id" -> FichajesEventosTable.id
+
+                else -> FichajesEventosTable.timestamp
+            }
+
+
+            val sortOrder =
+                if (order == "asc")
+                    SortOrder.ASC
+                else
+                    SortOrder.DESC
+
+
+            query =
+                query.orderBy(sortColumn to sortOrder)
+
+
+            /*
+            ========================
+            RESPUESTA FINAL
+            ========================
+            */
+
+            query.map {
+
+                FichajeResponse(
+                    id = it[FichajesEventosTable.id],
+                    userId = it[FichajesEventosTable.userId],
+                    username = it[UsuariosTable.username],
+                    fechaHora = it[FichajesEventosTable.timestamp],
+                    tipo =
+                        "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
+                            .lowercase(),
+                    latitud = it[FichajesEventosTable.latitud],
+                    longitud = it[FichajesEventosTable.longitud],
+                    accuracy = it[FichajesEventosTable.accuracy]
+                )
+            }
+        }
+    }
 
     fun obtenerTodosParaAdmin(): List<FichajeResponse> {
 
@@ -77,7 +158,10 @@ class FichajesEventosService {
                         userId = it[FichajesEventosTable.userId],
                         username = it[UsuariosTable.username],
                         fechaHora = it[FichajesEventosTable.timestamp],
-                        tipo = "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}".lowercase()
+                        tipo = "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}".lowercase(),
+                        latitud = it[FichajesEventosTable.latitud],
+                        longitud = it[FichajesEventosTable.longitud],
+                        accuracy = it[FichajesEventosTable.accuracy]
                     )
                 }
         }
@@ -99,7 +183,10 @@ class FichajesEventosService {
                         userId = it[FichajesEventosTable.userId],
                         username = it[UsuariosTable.username],
                         fechaHora = it[FichajesEventosTable.timestamp],
-                        tipo = "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}".lowercase()
+                        tipo = "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}".lowercase(),
+                        latitud = it[FichajesEventosTable.latitud],
+                        longitud = it[FichajesEventosTable.longitud],
+                        accuracy = it[FichajesEventosTable.accuracy]
                     )
                 }
         }
@@ -205,7 +292,10 @@ class FichajesEventosService {
                         fechaHora = it[FichajesEventosTable.timestamp],
                         tipo =
                             "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
-                                .lowercase()
+                                .lowercase(),
+                        latitud = it[FichajesEventosTable.latitud],
+                        longitud = it[FichajesEventosTable.longitud],
+                        accuracy = it[FichajesEventosTable.accuracy]
                     )
                 }
                 .firstOrNull()
@@ -254,7 +344,10 @@ class FichajesEventosService {
                         fechaHora = it[FichajesEventosTable.timestamp],
                         tipo =
                             "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
-                                .lowercase()
+                                .lowercase(),
+                        latitud = it[FichajesEventosTable.latitud],
+                        longitud = it[FichajesEventosTable.longitud],
+                        accuracy = it[FichajesEventosTable.accuracy]
                     )
                 }
         }

@@ -8,5 +8,8 @@ data class FichajeResponse(
     val userId: Int,
     val username: String,
     val fechaHora: Long,
-    val tipo: String
+    val tipo: String,
+    val latitud: Double?,
+    val longitud: Double?,
+    val accuracy: Double?
 )

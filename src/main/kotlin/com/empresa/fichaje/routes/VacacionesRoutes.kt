@@ -93,6 +93,15 @@ fun Route.vacacionesRoutes() {
         // 📄 Ver vacaciones
         get("/vacaciones") {
 
+            val estado =
+                call.request.queryParameters["estado"]
+
+            val sortBy =
+                call.request.queryParameters["sortBy"]
+
+            val order =
+                call.request.queryParameters["order"]
+
             val principal = call.principal<JWTPrincipal>()!!
 
             val userId = principal.payload
@@ -103,7 +112,13 @@ fun Route.vacacionesRoutes() {
                 .getClaim("role")
                 .asString()
 
-            val result = service.obtener(userId, role)
+            val result = service.obtener(
+                userId,
+                role,
+                estado,
+                sortBy,
+                order
+            )
 
             call.respond(result)
         }

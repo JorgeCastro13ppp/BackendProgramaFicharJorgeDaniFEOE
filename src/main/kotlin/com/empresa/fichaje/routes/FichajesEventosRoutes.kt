@@ -241,30 +241,31 @@ fun Route.fichajesEventosRoutes() {
 
             if (role != "admin") {
 
-                call.respond(
-                    HttpStatusCode.Forbidden
-                )
+                call.respond(HttpStatusCode.Forbidden)
 
                 return@get
             }
+
 
             val userIdParam =
                 call.request.queryParameters["userId"]
                     ?.toIntOrNull()
 
+
+            val sortBy =
+                call.request.queryParameters["sortBy"]
+
+            val order =
+                call.request.queryParameters["order"]
+
+
             val fichajes =
-                if (userIdParam != null) {
+                service.obtenerFichajesParaAdmin(
+                    userIdParam,
+                    sortBy,
+                    order
+                )
 
-                    service
-                        .obtenerFichajesPorUsuarioParaAdmin(
-                            userIdParam
-                        )
-
-                } else {
-
-                    service
-                        .obtenerTodosParaAdmin()
-                }
 
             call.respond(fichajes)
         }
