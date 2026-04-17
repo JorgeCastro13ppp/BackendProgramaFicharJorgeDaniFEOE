@@ -1,20 +1,18 @@
 package com.empresa.fichaje.routes
 
-import com.empresa.fichaje.database.UsuariosTable
-import com.empresa.fichaje.models.VacacionesRequest
+import com.empresa.fichaje.dto.request.VacacionesRequest
 import com.empresa.fichaje.services.VacacionesService
+import com.empresa.fichaje.utils.extractFilters
+import com.empresa.fichaje.utils.requireAdmin
+import com.empresa.fichaje.utils.requirePrincipal
+import com.empresa.fichaje.utils.requireQueryParam
+import com.empresa.fichaje.utils.role
+import com.empresa.fichaje.utils.userId
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
-import io.ktor.server.auth.jwt.JWTPrincipal
-import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
-import io.ktor.server.routing.Route
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.routing.put
-import org.jetbrains.exposed.sql.selectAll
-import org.jetbrains.exposed.sql.transactions.transaction
+import io.ktor.server.routing.*
 
 fun Route.vacacionesRoutes() {
 
@@ -22,21 +20,17 @@ fun Route.vacacionesRoutes() {
 
     authenticate("auth-jwt") {
 
+        /*
+        ========================
+        CREAR VACACIONES (ADMIN)
+        ========================
+        */
+
         post("/admin/vacaciones/{userId}") {
 
             try {
 
-                val principal = call.principal<JWTPrincipal>()!!
-
-                val role = principal.payload
-                    .getClaim("role")
-                    .asString()
-
-                if (role != "admin") {
-
-                    call.respond(HttpStatusCode.Forbidden)
-                    return@post
-                }
+                if (!call.requireAdmin()) return@post
 
                 val userId =
                     call.parameters["userId"]?.toIntOrNull()
@@ -44,6 +38,7 @@ fun Route.vacacionesRoutes() {
                 if (userId == null) {
 
                     call.respond(HttpStatusCode.BadRequest)
+
                     return@post
                 }
 
@@ -69,82 +64,144 @@ fun Route.vacacionesRoutes() {
             }
         }
 
-        // 👷 Solicitar vacaciones
+
+        /*
+        ========================
+        SOLICITAR VACACIONES (USER)
+        ========================
+        */
+
         post("/vacaciones") {
 
-            val principal = call.principal<JWTPrincipal>()!!
+            val principal =
+                call.requirePrincipal()
 
-            val userId = principal.payload
-                .getClaim("userId")
-                .asInt()
-
-            val request = call.receive<VacacionesRequest>()
+            val request =
+                call.receive<VacacionesRequest>()
 
             service.solicitar(
-                userId,
+                principal.userId(),
                 request.fechaInicio,
                 request.fechaFin
             )
 
-            call.respond(mapOf("message" to "Solicitud enviada"))
+            call.respond(
+                mapOf("message" to "Solicitud enviada")
+            )
         }
 
 
-        // 📄 Ver vacaciones
+        /*
+        ========================
+        VER VACACIONES (CON FILTROS)
+        ========================
+        */
+
         get("/vacaciones") {
 
-            val estado =
-                call.request.queryParameters["estado"]
+            val principal =
+                call.requirePrincipal()
 
-            val sortBy =
-                call.request.queryParameters["sortBy"]
+            val filters =
+                call.extractFilters(
+                    principal,
+                    allowUserOverride = false
+                )
 
-            val order =
-                call.request.queryParameters["order"]
-
-            val principal = call.principal<JWTPrincipal>()!!
-
-            val userId = principal.payload
-                .getClaim("userId")
-                .asInt()
-
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
-
-            val result = service.obtener(
-                userId,
-                role,
-                estado,
-                sortBy,
-                order
-            )
+            val result =
+                service.obtener(
+                    filters.userId!!,
+                    principal.role(),
+                    filters.estado,
+                    filters.sortBy,
+                    filters.order
+                )
 
             call.respond(result)
         }
 
 
-        // 👨‍💼 Aprobar / rechazar (solo admin)
+        /*
+        ========================
+        APROBAR / RECHAZAR (ADMIN)
+        ========================
+        */
+
         put("/vacaciones/{id}") {
 
-            val principal = call.principal<JWTPrincipal>()!!
+            if (!call.requireAdmin()) return@put
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
+            val id =
+                call.parameters["id"]!!.toInt()
 
-            if (role != "admin") {
-                call.respond(HttpStatusCode.Forbidden)
-                return@put
+            val estado =
+                call.requireQueryParam("estado")
+
+            service.actualizarEstado(
+                id,
+                estado
+            )
+
+            call.respond(
+                mapOf("message" to "Estado actualizado")
+            )
+        }
+
+        get("/vacaciones/resumen") {
+
+            val principal =
+                call.requirePrincipal()
+
+            val resumen =
+                service.obtenerResumenUsuario(
+                    principal.userId()
+                )
+
+            call.respond(resumen)
+        }
+
+        get("/admin/vacaciones/resumen/{userId}") {
+
+            if (!call.requireAdmin()) return@get
+
+            val userId =
+                call.parameters["userId"]?.toIntOrNull()
+
+            if (userId == null) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("message" to "UserId inválido")
+                )
+
+                return@get
             }
 
-            val id = call.parameters["id"]!!.toInt()
+            val resumen =
+                service.obtenerResumenUsuario(userId)
 
-            val estado = call.request.queryParameters["estado"]!!
-
-            service.actualizarEstado(id, estado)
-
-            call.respond(mapOf("message" to "Estado actualizado"))
+            call.respond(resumen)
         }
+
+        get("/admin/vacaciones/resumen") {
+
+            if (!call.requireAdmin()) return@get
+
+            val resumen =
+                service.obtenerResumenTodosUsuarios()
+
+            call.respond(resumen)
+        }
+
+        get("/admin/vacaciones/alertas") {
+
+            if (!call.requireAdmin()) return@get
+
+            val alertas =
+                service.obtenerAlertasNavidad()
+
+            call.respond(alertas)
+        }
+
     }
 }

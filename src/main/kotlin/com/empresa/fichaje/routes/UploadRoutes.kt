@@ -1,85 +1,114 @@
 package com.empresa.fichaje.routes
 
+import com.empresa.fichaje.utils.isAdmin
+import com.empresa.fichaje.utils.requirePrincipal
+import com.empresa.fichaje.utils.userId
 import io.ktor.http.*
-import io.ktor.server.application.*
+import io.ktor.server.auth.authenticate
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.http.content.*
+import io.ktor.utils.io.jvm.javaio.copyTo
 import java.io.File
 
 fun Route.uploadRoutes() {
 
-    post("/upload") {
+    authenticate("auth-jwt") {
 
-        val multipart = call.receiveMultipart()
+        post("/upload") {
 
-        val userId =
-            call.request.queryParameters["userId"] ?: "general"
+            val principal =
+                call.requirePrincipal()
 
-        var fileName: String? = null
-        var error = false
+            val requestedUserId =
+                call.request.queryParameters["userId"]?.toIntOrNull()
 
+            val userId =
+                if (requestedUserId != null && principal.isAdmin())
+                    requestedUserId.toString()
+                else
+                    principal.userId().toString()
 
-        multipart.forEachPart { part ->
+            val multipart =
+                call.receiveMultipart()
 
-            if (part is PartData.FileItem) {
+            var fileName: String? = null
+            var invalidExtension = false
 
-                val originalFileName =
-                    part.originalFileName ?: "archivo.pdf"
+            val allowedExtensions =
+                setOf("pdf", "jpg", "jpeg", "png")
 
-                val uploadDir =
-                    File("uploads/documentos/$userId")
+            multipart.forEachPart { part ->
 
-                if (!uploadDir.exists()) {
-                    uploadDir.mkdirs()
+                if (part is PartData.FileItem) {
+
+                    val originalFileName =
+                        part.originalFileName ?: "archivo.pdf"
+
+                    val extension =
+                        originalFileName.substringAfterLast('.', "")
+
+                    if (extension.lowercase() !in allowedExtensions) {
+
+                        invalidExtension = true
+                        part.dispose()
+                        return@forEachPart
+                    }
+
+                    val safeFileName =
+                        originalFileName.replace(
+                            Regex("[^a-zA-Z0-9._-]"),
+                            "_"
+                        )
+
+                    val uploadDir =
+                        File("uploads/documentos/$userId")
+
+                    if (!uploadDir.exists()) {
+                        uploadDir.mkdirs()
+                    }
+
+                    val uniqueFileName =
+                        "${System.currentTimeMillis()}_$safeFileName"
+
+                    val file =
+                        File(uploadDir, uniqueFileName)
+
+                    // Escritura correcta con ByteReadChannel
+                    part.provider().copyTo(file.outputStream())
+
+                    fileName = uniqueFileName
                 }
 
-                val uniqueFileName =
-                    "${System.currentTimeMillis()}_$originalFileName"
-
-                val fileBytes =
-                    part.streamProvider().readBytes()
-
-                val file =
-                    File(uploadDir, uniqueFileName)
-
-                file.writeBytes(fileBytes)
-
-                fileName = uniqueFileName
+                part.dispose()
             }
 
-            part.dispose()
-        }
+            if (invalidExtension) {
 
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    "Tipo de archivo no permitido"
+                )
 
-        if (error) {
+                return@post
+            }
+
+            if (fileName == null) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    "Archivo no recibido"
+                )
+
+                return@post
+            }
 
             call.respond(
-                HttpStatusCode.BadRequest,
-                "Nombre de archivo inválido"
+                mapOf(
+                    "url" to "documentos/$userId/$fileName"
+                )
             )
-
-            return@post
         }
-
-
-        if (fileName == null) {
-
-            call.respond(
-                HttpStatusCode.BadRequest,
-                "Archivo no recibido"
-            )
-
-            return@post
-        }
-
-
-        call.respond(
-
-            mapOf(
-                "url" to "documentos/$userId/$fileName"
-            )
-        )
     }
 }

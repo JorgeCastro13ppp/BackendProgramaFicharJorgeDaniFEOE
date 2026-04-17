@@ -1,26 +1,27 @@
 package com.empresa.fichaje
 
 import com.empresa.fichaje.database.DatabaseFactory
-import com.empresa.fichaje.routes.documentRoutes
-import com.empresa.fichaje.routes.uploadRoutes
 import com.empresa.fichaje.services.JwtService
+import io.github.cdimascio.dotenv.dotenv
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
-import io.ktor.server.http.content.files
-import io.ktor.server.http.content.static
+import io.ktor.server.http.content.staticFiles
 import io.ktor.server.netty.EngineMain
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.routing.routing
+import java.io.File
 
 fun main(args: Array<String>) {
     EngineMain.main(args)
 }
 
 fun Application.module() {
+
+    dotenv()
 
     DatabaseFactory.init()
 
@@ -32,18 +33,19 @@ fun Application.module() {
 
         jwt("auth-jwt") {
 
-            verifier(JwtService.verifier())
+            verifier(JwtService.verifier)
 
             validate { credential ->
 
                 val userId =
-                    credential.payload.getClaim("userId").asInt()
+                    credential.payload
+                        .getClaim("userId")
+                        .asInt()
 
-                if (userId != null) {
+                if (userId != null)
                     JWTPrincipal(credential.payload)
-                } else {
+                else
                     null
-                }
             }
         }
     }
@@ -61,22 +63,18 @@ fun Application.module() {
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
 
-        allowHeaders { true } // ← MUY IMPORTANTE
+        allowHeaders { true }
 
         allowCredentials = true
     }
 
     routing {
 
-        static("/uploads") {
-
-            files("uploads")
-        }
-        uploadRoutes()
-        documentRoutes()
+        staticFiles(
+            remotePath = "/uploads",
+            dir = File("uploads")
+        )
     }
-
-
 
     configureRouting()
 }

@@ -4,16 +4,22 @@ import org.mindrot.jbcrypt.BCrypt
 
 object SecurityService {
 
-    fun hashPassword(password: String): String {
-        return BCrypt.hashpw(password, BCrypt.gensalt())
-    }
+    private const val BCRYPT_COST = 12
 
-    fun checkPassword(password: String, hashed: String): Boolean {
-        return BCrypt.checkpw(password, hashed)
-    }
+    fun hashPassword(
+        password: String
+    ): String =
+        BCrypt.hashpw(
+            password,
+            BCrypt.gensalt(BCRYPT_COST)
+        )
 
-    fun verifyPassword(password: String, hashedPassword: String): Boolean {
-        return BCrypt.checkpw(password, hashedPassword)
-    }
-
+    fun verifyPassword(
+        password: String,
+        hashedPassword: String
+    ): Boolean =
+        BCrypt.checkpw(
+            password,
+            hashedPassword
+        )
 }

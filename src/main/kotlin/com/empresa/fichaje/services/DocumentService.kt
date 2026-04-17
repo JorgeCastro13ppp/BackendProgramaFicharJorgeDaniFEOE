@@ -1,9 +1,9 @@
 package com.empresa.fichaje.services
 
-import com.empresa.fichaje.database.DocumentosTable
-import com.empresa.fichaje.database.UsuariosTable
-import com.empresa.fichaje.models.DocumentRequest
-import com.empresa.fichaje.models.DocumentResponse
+import com.empresa.fichaje.database.tables.DocumentosTable
+import com.empresa.fichaje.database.tables.UsuariosTable
+import com.empresa.fichaje.dto.request.DocumentRequest
+import com.empresa.fichaje.dto.response.DocumentResponse
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -11,26 +11,25 @@ import java.io.File
 
 class DocumentService {
 
-    private fun construirUrlCompleta(ruta: String): String {
+    private val baseUrl =
+        System.getenv("BASE_URL")
+            ?: "http://localhost:8080/uploads/"
 
-        val baseUrl =
-            System.getenv("BASE_URL")
-                ?: "http://localhost:8080/uploads/"
+    private fun construirUrlCompleta(
+        ruta: String
+    ): String = "$baseUrl$ruta"
 
-        return "$baseUrl$ruta"
-    }
 
-    fun createDocument(request: DocumentRequest) {
+    fun createDocument(
+        request: DocumentRequest
+    ) = transaction {
 
-        transaction {
+        DocumentosTable.insert {
 
-            DocumentosTable.insert {
-
-                it[userId] = request.userId
-                it[nombre] = request.nombre
-                it[tipo] = request.tipo
-                it[url] = request.url
-            }
+            it[userId] = request.userId
+            it[nombre] = request.nombre
+            it[tipo] = request.tipo
+            it[url] = request.url
         }
     }
 
@@ -40,61 +39,49 @@ class DocumentService {
         tipo: String? = null,
         sortBy: String? = null,
         order: String? = null
-    ): List<DocumentResponse> {
+    ): List<DocumentResponse> = transaction {
 
-        return transaction {
+        val query = DocumentosTable
+            .innerJoin(UsuariosTable)
+            .selectAll()
+            .apply {
 
-            var query =
-                DocumentosTable
-                    .innerJoin(
-                        UsuariosTable,
-                        { DocumentosTable.userId },
-                        { UsuariosTable.id }
-                    )
-                    .selectAll()
+                userId?.let {
 
-
-            if (userId != null) {
-
-                query =
-                    query.andWhere {
-                        DocumentosTable.userId eq userId
+                    andWhere {
+                        DocumentosTable.userId eq it
                     }
+                }
+
+                tipo?.let {
+
+                    andWhere {
+                        DocumentosTable.tipo eq it
+                    }
+                }
             }
 
 
-            if (tipo != null) {
-
-                query =
-                    query.andWhere {
-                        DocumentosTable.tipo eq tipo
-                    }
-            }
-
-
-            val sortColumn = when (sortBy) {
+        val sortColumn =
+            when (sortBy) {
 
                 "nombre" -> DocumentosTable.nombre
                 "tipo" -> DocumentosTable.tipo
                 "usuario" -> UsuariosTable.username
-                "id" -> DocumentosTable.id
-
                 else -> DocumentosTable.id
             }
 
 
-            val sortOrder =
-                if (order == "desc")
-                    SortOrder.DESC
-                else
-                    SortOrder.ASC
+        val sortOrder =
+            if (order == "desc")
+                SortOrder.DESC
+            else
+                SortOrder.ASC
 
 
-            query =
-                query.orderBy(sortColumn to sortOrder)
-
-
-            query.map {
+        query
+            .orderBy(sortColumn to sortOrder)
+            .map {
 
                 DocumentResponse(
                     id = it[DocumentosTable.id],
@@ -102,44 +89,39 @@ class DocumentService {
                     username = it[UsuariosTable.username],
                     nombre = it[DocumentosTable.nombre],
                     tipo = it[DocumentosTable.tipo],
-                    url = construirUrlCompleta(it[DocumentosTable.url])
+                    url = construirUrlCompleta(
+                        it[DocumentosTable.url]
+                    )
                 )
             }
-        }
     }
 
 
-    fun deleteDocument(id: Int) {
+    fun deleteDocument(
+        id: Int
+    ) = transaction {
 
         val rutaArchivo =
-            transaction {
-
-                DocumentosTable
-                    .selectAll()
-                    .where { DocumentosTable.id eq id }
-                    .firstOrNull()
-                    ?.get(DocumentosTable.url)
-            }
+            DocumentosTable
+                .select(DocumentosTable.url)
+                .where { DocumentosTable.id eq id }
+                .firstOrNull()
+                ?.get(DocumentosTable.url)
 
 
-        if (rutaArchivo != null) {
+        rutaArchivo?.let {
 
             val archivo =
-                File("uploads/$rutaArchivo")
+                File("uploads/$it")
 
-            if (archivo.exists()) {
-
+            if (archivo.exists())
                 archivo.delete()
-            }
         }
 
 
-        transaction {
+        DocumentosTable.deleteWhere {
 
-            DocumentosTable.deleteWhere {
-
-                DocumentosTable.id eq id
-            }
+            DocumentosTable.id eq id
         }
     }
 }

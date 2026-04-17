@@ -37,4 +37,5 @@ dependencies {
     implementation("io.ktor:ktor-server-auth-jwt:3.4.1")
 
     implementation("io.ktor:ktor-server-cors-jvm:3.4.1")
+    implementation("io.github.cdimascio:dotenv-kotlin:6.4.1")
 }

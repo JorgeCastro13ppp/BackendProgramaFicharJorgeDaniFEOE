@@ -1,5 +1,13 @@
 package com.empresa.fichaje.database
 
+import com.empresa.fichaje.database.tables.DocumentosTable
+import com.empresa.fichaje.database.tables.FaltasTable
+import com.empresa.fichaje.database.tables.FichajesEventosTable
+import com.empresa.fichaje.database.tables.HorasExtrasTable
+import com.empresa.fichaje.database.tables.JornadasLaboralesTable
+import com.empresa.fichaje.database.tables.UsuariosTable
+import com.empresa.fichaje.database.tables.VacacionesResumenTable
+import com.empresa.fichaje.database.tables.VacacionesTable
 import io.github.cdimascio.dotenv.dotenv
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
@@ -23,8 +31,25 @@ object DatabaseFactory {
         )
 
         transaction {
-            SchemaUtils.create( UsuariosTable, DocumentosTable, VacacionesTable, FaltasTable,
-                FichajesEventosTable)
+            SchemaUtils.create(
+                // usuarios
+                UsuariosTable,
+
+                // fichajes
+                FichajesEventosTable,
+                JornadasLaboralesTable,
+                HorasExtrasTable,
+
+                // vacaciones
+                VacacionesTable,
+                VacacionesResumenTable,
+
+                // documentos
+                DocumentosTable,
+
+                // incidencias
+                FaltasTable
+            )
         }
     }
 }

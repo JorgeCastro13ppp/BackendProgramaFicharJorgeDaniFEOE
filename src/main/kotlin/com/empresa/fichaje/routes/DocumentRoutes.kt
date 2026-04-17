@@ -1,9 +1,10 @@
 package com.empresa.fichaje.routes
 
-import com.empresa.fichaje.models.DocumentRequest
+import com.empresa.fichaje.dto.request.DocumentRequest
 import com.empresa.fichaje.services.DocumentService
+import com.empresa.fichaje.utils.extractFilters
+import com.empresa.fichaje.utils.isAdmin
 import io.ktor.http.*
-import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -24,16 +25,9 @@ fun Route.documentRoutes() {
 
         post("/documentos") {
 
-            val principal =
-                call.principal<JWTPrincipal>()!!
+            val principal = call.principal<JWTPrincipal>()!!
 
-            val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-
-            if (role != "admin") {
+            if (!principal.isAdmin()) {
 
                 call.respond(
                     HttpStatusCode.Forbidden,
@@ -42,7 +36,6 @@ fun Route.documentRoutes() {
 
                 return@post
             }
-
 
             val request =
                 call.receive<DocumentRequest>()
@@ -66,34 +59,19 @@ fun Route.documentRoutes() {
             val principal =
                 call.principal<JWTPrincipal>()!!
 
-            val userId =
-                principal.payload
-                    .getClaim("userId")
-                    .asInt()
-
-
-            val tipo =
-                call.request
-                    .queryParameters["tipo"]
-
-
-            val sortBy =
-                call.request
-                    .queryParameters["sortBy"]
-
-            val order =
-                call.request
-                    .queryParameters["order"]
-
+            val filters =
+                call.extractFilters(
+                    principal,
+                    allowUserOverride = false
+                )
 
             val docs =
                 service.getDocuments(
-                    userId = userId,
-                    tipo = tipo,
-                    sortBy = sortBy,
-                    order = order
+                    userId = filters.userId,
+                    tipo = filters.tipo,
+                    sortBy = filters.sortBy,
+                    order = filters.order
                 )
-
 
             call.respond(docs)
         }
@@ -101,7 +79,7 @@ fun Route.documentRoutes() {
 
         /*
         ========================
-        ELIMINAR DOCUMENTO
+        ELIMINAR DOCUMENTO (ADMIN)
         ========================
         */
 
@@ -110,13 +88,7 @@ fun Route.documentRoutes() {
             val principal =
                 call.principal<JWTPrincipal>()!!
 
-            val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-
-            if (role != "admin") {
+            if (!principal.isAdmin()) {
 
                 call.respond(
                     HttpStatusCode.Forbidden,
@@ -126,11 +98,9 @@ fun Route.documentRoutes() {
                 return@delete
             }
 
-
             val id =
                 call.parameters["id"]
                     ?.toIntOrNull()
-
 
             if (id == null) {
 
@@ -142,9 +112,7 @@ fun Route.documentRoutes() {
                 return@delete
             }
 
-
             service.deleteDocument(id)
-
 
             call.respond(
                 mapOf("message" to "Documento eliminado")
@@ -163,48 +131,26 @@ fun Route.documentRoutes() {
             val principal =
                 call.principal<JWTPrincipal>()!!
 
-            val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-
-            if (role != "admin") {
+            if (!principal.isAdmin()) {
 
                 call.respond(HttpStatusCode.Forbidden)
 
                 return@get
             }
 
-
-            val userId =
-                call.request
-                    .queryParameters["userId"]
-                    ?.toIntOrNull()
-
-
-            val tipo =
-                call.request
-                    .queryParameters["tipo"]
-
-
-            val sortBy =
-                call.request
-                    .queryParameters["sortBy"]
-
-            val order =
-                call.request
-                    .queryParameters["order"]
-
+            val filters =
+                call.extractFilters(
+                    principal,
+                    allowUserOverride = true
+                )
 
             val docs =
                 service.getDocuments(
-                    userId = userId,
-                    tipo = tipo,
-                    sortBy = sortBy,
-                    order = order
+                    userId = filters.userId,
+                    tipo = filters.tipo,
+                    sortBy = filters.sortBy,
+                    order = filters.order
                 )
-
 
             call.respond(docs)
         }

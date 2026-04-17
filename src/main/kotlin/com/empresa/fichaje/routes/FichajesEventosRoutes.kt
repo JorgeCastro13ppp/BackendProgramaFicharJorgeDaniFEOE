@@ -1,24 +1,30 @@
 package com.empresa.fichaje.routes
 
-import com.empresa.fichaje.models.FichajeEventoRequest
-import com.empresa.fichaje.models.FichajeEventoResponse
+import com.empresa.fichaje.dto.request.FichajeEventoRequest
+import com.empresa.fichaje.dto.response.FichajeEventoResponse
 import com.empresa.fichaje.services.FichajesEventosService
+import com.empresa.fichaje.utils.requireAdmin
+import com.empresa.fichaje.utils.withIdParam
+import com.empresa.fichaje.utils.withUserAccess
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
-import io.ktor.server.auth.jwt.JWTPrincipal
-import io.ktor.server.auth.principal
-import io.ktor.server.request.*
-import io.ktor.server.response.*
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
 import io.ktor.server.routing.*
 
 fun Route.fichajesEventosRoutes() {
-
 
     val service = FichajesEventosService()
 
     authenticate("auth-jwt") {
 
         route("/fichajes-eventos") {
+
+            /*
+            ========================
+            CREAR EVENTO
+            ========================
+            */
 
             post {
 
@@ -49,208 +55,103 @@ fun Route.fichajesEventosRoutes() {
                 }
             }
 
+
+            /*
+            ========================
+            ÚLTIMO EVENTO
+            ========================
+            */
+
             get("/ultimo/{userId}") {
 
-                val userId = call.parameters["userId"]?.toIntOrNull()
+                call.withUserAccess { userId ->
 
-                if (userId == null) {
+                    val ultimoEvento =
+                        service.obtenerUltimoEvento(userId)
 
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to "userId inválido")
-                    )
+                    if (ultimoEvento == null) {
 
-                    return@get
+                        call.respond(
+                            HttpStatusCode.NotFound,
+                            mapOf(
+                                "error" to
+                                        "No hay fichajes para este usuario"
+                            )
+                        )
+
+                        return@withUserAccess
+                    }
+
+                    call.respond(ultimoEvento)
                 }
-
-                val service = FichajesEventosService()
-
-                val ultimoEvento =
-                    service.obtenerUltimoEvento(userId)
-
-                if (ultimoEvento == null) {
-
-                    call.respond(
-                        HttpStatusCode.NotFound,
-                        mapOf("error" to "No hay fichajes para este usuario")
-                    )
-
-                    return@get
-                }
-
-                call.respond(ultimoEvento)
             }
+
+
+            /*
+            ========================
+            EVENTOS HOY
+            ========================
+            */
 
             get("/hoy/{userId}") {
 
-                val userId =
-                    call.parameters["userId"]?.toIntOrNull()
-
-                if (userId == null) {
+                call.withUserAccess { userId ->
 
                     call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to "userId inválido")
+                        service.obtenerEventosHoy(userId)
                     )
-
-                    return@get
                 }
-
-                val eventosHoy =
-                    service.obtenerEventosHoy(userId)
-
-                call.respond(eventosHoy)
             }
+
+
+            /*
+            ========================
+            ESTADO ACTUAL
+            ========================
+            */
+
             get("/estado/{userId}") {
 
-                val principal =
-                    call.principal<JWTPrincipal>()
-
-                if (principal == null) {
-
-                    call.respond(HttpStatusCode.Unauthorized)
-
-                    return@get
-                }
-
-
-                val userIdParam =
-                    call.parameters["userId"]?.toIntOrNull()
-
-                if (userIdParam == null) {
+                call.withUserAccess { userId ->
 
                     call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to "userId inválido")
+                        service.obtenerEstadoDetallado(userId)
                     )
-
-                    return@get
                 }
-
-
-                val tokenUserId =
-                    principal.payload
-                        .getClaim("userId")
-                        .asInt()
-
-                val role =
-                    principal.payload
-                        .getClaim("role")
-                        .asString()
-
-
-                if (tokenUserId != userIdParam && role != "admin") {
-
-                    call.respond(HttpStatusCode.Forbidden)
-
-                    return@get
-                }
-
-
-                val estado =
-                    service.obtenerEstadoDetallado(userIdParam)
-
-                call.respond(estado)
             }
+
+
+            /*
+            ========================
+            SIGUIENTE ACCIÓN
+            ========================
+            */
 
             get("/siguiente-accion/{userId}") {
 
-                val principal =
-                    call.principal<JWTPrincipal>()
-
-                if (principal == null) {
-
-                    call.respond(HttpStatusCode.Unauthorized)
-
-                    return@get
-                }
-
-
-                val userIdParam =
-                    call.parameters["userId"]?.toIntOrNull()
-
-                if (userIdParam == null) {
+                call.withUserAccess { userId ->
 
                     call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to "userId inválido")
+                        service.obtenerAccionesPermitidas(userId)
                     )
-
-                    return@get
                 }
-
-
-                val tokenUserId =
-                    principal.payload
-                        .getClaim("userId")
-                        .asInt()
-
-                val role =
-                    principal.payload
-                        .getClaim("role")
-                        .asString()
-
-
-                if (tokenUserId != userIdParam && role != "admin") {
-
-                    call.respond(HttpStatusCode.Forbidden)
-
-                    return@get
-                }
-
-
-                val resultado =
-                    service.obtenerAccionesPermitidas(userIdParam)
-
-                call.respond(resultado)
-            }
-            get("/horas-hoy/{userId}") {
-
-                val userId =
-                    call.parameters["userId"]?.toIntOrNull()
-
-                if (userId == null) {
-
-                    call.respond(HttpStatusCode.BadRequest)
-                    return@get
-                }
-
-                val ms =
-                    service.calcularHorasTrabajadasHoy(userId)
-
-                call.respond(
-
-                    mapOf(
-                        "milisegundos" to ms,
-                        "formato" to service.formatearTiempo(ms)
-                    )
-                )
             }
         }
 
 
+        /*
+        ========================
+        ADMIN: LISTADO FICHAJES
+        ========================
+        */
+
         get("/admin/fichajes") {
 
-            val principal =
-                call.principal<JWTPrincipal>()!!
-
-            val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-            if (role != "admin") {
-
-                call.respond(HttpStatusCode.Forbidden)
-
-                return@get
-            }
-
+            if (!call.requireAdmin()) return@get
 
             val userIdParam =
                 call.request.queryParameters["userId"]
                     ?.toIntOrNull()
-
 
             val sortBy =
                 call.request.queryParameters["sortBy"]
@@ -258,94 +159,72 @@ fun Route.fichajesEventosRoutes() {
             val order =
                 call.request.queryParameters["order"]
 
-
-            val fichajes =
+            call.respond(
                 service.obtenerFichajesParaAdmin(
                     userIdParam,
                     sortBy,
                     order
                 )
-
-
-            call.respond(fichajes)
+            )
         }
+
+
+        /*
+        ========================
+        ADMIN: ELIMINAR EVENTO
+        ========================
+        */
 
         delete("/admin/fichajes/{id}") {
 
-            val principal = call.principal<JWTPrincipal>()!!
+            if (!call.requireAdmin()) return@delete
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
+            call.withIdParam { id ->
 
-            if (role != "admin") {
+                val eliminado =
+                    service.eliminarEvento(id)
 
-                call.respond(HttpStatusCode.Forbidden)
-                return@delete
-            }
-
-            val id = call.parameters["id"]?.toIntOrNull()
-
-            if (id == null) {
-
-                call.respond(HttpStatusCode.BadRequest)
-                return@delete
-            }
-
-            val service = FichajesEventosService()
-
-            val eliminado = service.eliminarEvento(id)
-
-            if (eliminado) {
-
-                call.respond(HttpStatusCode.OK)
-
-            } else {
-
-                call.respond(HttpStatusCode.NotFound)
+                call.respond(
+                    if (eliminado)
+                        HttpStatusCode.OK
+                    else
+                        HttpStatusCode.NotFound
+                )
             }
         }
+
+
+        /*
+        ========================
+        ADMIN: TOTAL HOY
+        ========================
+        */
 
         get("/admin/fichajes-hoy") {
 
-            val principal = call.principal<JWTPrincipal>()!!
+            if (!call.requireAdmin()) return@get
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
-
-            if (role != "admin") {
-                call.respond(HttpStatusCode.Forbidden)
-                return@get
-            }
-
-            val service = FichajesEventosService()
-
-            val total = service.contarFichajesHoy()
-
-            call.respond(mapOf("total" to total))
+            call.respond(
+                mapOf(
+                    "total" to service.contarFichajesHoy()
+                )
+            )
         }
+
+
+        /*
+        ========================
+        ADMIN: DASHBOARD HOY
+        ========================
+        */
 
         get("/admin/dashboard-fichajes-hoy") {
 
-            val principal = call.principal<JWTPrincipal>()!!
+            if (!call.requireAdmin()) return@get
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
-
-            if (role != "admin") {
-                call.respond(HttpStatusCode.Forbidden)
-                return@get
-            }
-
-            val resumen =
-                FichajesEventosService()
-                    .resumenFichajesHoy()
-
-            call.respond(resumen)
+            call.respond(
+                service.resumenFichajesHoy()
+            )
         }
-
-
     }
 }

@@ -1,0 +1,23 @@
+package com.empresa.fichaje.domain.enums
+
+enum class EstadoLaboral {
+
+    FUERA,
+
+    EN_TALLER,
+    DESCANSO_TALLER,
+
+    VIAJE_IDA_OBRA,
+    ESPERANDO_ENTRADA_OBRA,
+    EN_OBRA,
+    DESCANSO_OBRA,
+    FIN_JORNADA_OBRA,
+
+    VIAJE_IDA_REPARACION,
+    ESPERANDO_ENTRADA_REPARACION,
+    EN_REPARACION,
+    DESCANSO_REPARACION,
+    FIN_JORNADA_REPARACION,
+
+    VIAJE_VUELTA_TALLER
+}

@@ -1,24 +1,23 @@
 package com.empresa.fichaje.services
 
-import EstadoLaboral
-import com.empresa.fichaje.database.FichajesEventosTable
-import com.empresa.fichaje.database.UsuariosTable
-import com.empresa.fichaje.models.AccionFichaje
-import com.empresa.fichaje.models.EstadoActualResponse
-import com.empresa.fichaje.models.FichajeEventoRequest
-import com.empresa.fichaje.models.FichajeResponse
-import com.empresa.fichaje.models.SiguientesAccionesResponse
-import org.jetbrains.exposed.sql.SortOrder
+import com.empresa.fichaje.database.tables.FichajesEventosTable
+import com.empresa.fichaje.database.tables.UsuariosTable
+import com.empresa.fichaje.domain.enums.*
+import com.empresa.fichaje.domain.state.calcularEstadoActual
+import com.empresa.fichaje.domain.state.validarCambioContexto
+import com.empresa.fichaje.domain.state.validarTransicionEstado
+import com.empresa.fichaje.dto.request.FichajeEventoRequest
+import com.empresa.fichaje.dto.response.EstadoActualResponse
+import com.empresa.fichaje.dto.response.FichajeResponse
+import com.empresa.fichaje.dto.response.SiguientesAccionesResponse
+import com.empresa.fichaje.utils.eventsBetweenDatesByUserOrdered
+import com.empresa.fichaje.utils.latestFichajeResponse
+import com.empresa.fichaje.utils.selectWhere
+import com.empresa.fichaje.utils.todayRange
+import com.empresa.fichaje.utils.toFichajeResponse
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.and
-import org.jetbrains.exposed.sql.andWhere
-import org.jetbrains.exposed.sql.deleteWhere
-import org.jetbrains.exposed.sql.insert
-import org.jetbrains.exposed.sql.select
-import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
-
-import org.jetbrains.exposed.sql.insertAndGetId
 
 class FichajesEventosService {
 
@@ -29,24 +28,19 @@ class FichajesEventosService {
         val estadoActual =
             obtenerEstadoActual(request.userId)
 
-
-        // Validar transición de estado
         validarTransicionEstado(
             estadoActual,
             request.accion.name
         )
 
-
-        // (Opcional) validar coherencia de contexto
         validarCambioContexto(
             estadoActual,
             request.contexto.name
         )
 
-
         return transaction {
 
-            val insertStatement =
+            val insertedId =
                 FichajesEventosTable.insert {
 
                     it[userId] = request.userId
@@ -56,11 +50,22 @@ class FichajesEventosService {
                     it[latitud] = request.latitud
                     it[longitud] = request.longitud
                     it[accuracy] = request.accuracy
-                }
+                }[FichajesEventosTable.id]
 
-            insertStatement[FichajesEventosTable.id]
+
+            if (request.accion.name == "SALIDA") {
+
+                HorasService()
+                    .calcularJornadaLegal(
+                        request.userId,
+                        request.timestamp
+                    )
+            }
+
+            insertedId
         }
     }
+
 
     fun obtenerFichajesParaAdmin(
         userId: Int? = null,
@@ -74,32 +79,15 @@ class FichajesEventosService {
                 (FichajesEventosTable innerJoin UsuariosTable)
                     .selectAll()
 
-
-            /*
-            ========================
-            FILTRO POR USUARIO
-            ========================
-            */
-
             if (userId != null) {
 
-                query =
-                    query.andWhere {
-                        FichajesEventosTable.userId eq userId
-                    }
+                query = query.andWhere {
+                    FichajesEventosTable.userId eq userId
+                }
             }
-
-
-            /*
-            ========================
-            ORDENACIÓN
-            ========================
-            */
 
             val sortColumn = when (sortBy) {
 
-                "fecha" -> FichajesEventosTable.timestamp
-                "hora" -> FichajesEventosTable.timestamp
                 "usuario" -> UsuariosTable.username
                 "accion" -> FichajesEventosTable.accion
                 "contexto" -> FichajesEventosTable.contexto
@@ -108,120 +96,39 @@ class FichajesEventosService {
                 else -> FichajesEventosTable.timestamp
             }
 
-
             val sortOrder =
                 if (order == "asc")
                     SortOrder.ASC
                 else
                     SortOrder.DESC
 
-
-            query =
-                query.orderBy(sortColumn to sortOrder)
-
-
-            /*
-            ========================
-            RESPUESTA FINAL
-            ========================
-            */
-
-            query.map {
-
-                FichajeResponse(
-                    id = it[FichajesEventosTable.id],
-                    userId = it[FichajesEventosTable.userId],
-                    username = it[UsuariosTable.username],
-                    fechaHora = it[FichajesEventosTable.timestamp],
-                    tipo =
-                        "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
-                            .lowercase(),
-                    latitud = it[FichajesEventosTable.latitud],
-                    longitud = it[FichajesEventosTable.longitud],
-                    accuracy = it[FichajesEventosTable.accuracy]
-                )
-            }
+            query
+                .orderBy(sortColumn to sortOrder)
+                .map { it.toFichajeResponse() }
         }
     }
 
-    fun obtenerTodosParaAdmin(): List<FichajeResponse> {
-
-        return transaction {
-
-            (FichajesEventosTable innerJoin UsuariosTable)
-                .selectAll()
-                .orderBy(FichajesEventosTable.timestamp, SortOrder.DESC)
-                .map {
-
-                    FichajeResponse(
-                        id = it[FichajesEventosTable.id],
-                        userId = it[FichajesEventosTable.userId],
-                        username = it[UsuariosTable.username],
-                        fechaHora = it[FichajesEventosTable.timestamp],
-                        tipo = "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}".lowercase(),
-                        latitud = it[FichajesEventosTable.latitud],
-                        longitud = it[FichajesEventosTable.longitud],
-                        accuracy = it[FichajesEventosTable.accuracy]
-                    )
-                }
-        }
-    }
-
-    fun obtenerFichajesPorUsuarioParaAdmin(userId: Int): List<FichajeResponse> {
-
-        return transaction {
-
-            (FichajesEventosTable innerJoin UsuariosTable)
-                .select {
-                    FichajesEventosTable.userId eq userId
-                }
-                .orderBy(FichajesEventosTable.timestamp, SortOrder.DESC)
-                .map {
-
-                    FichajeResponse(
-                        id = it[FichajesEventosTable.id],
-                        userId = it[FichajesEventosTable.userId],
-                        username = it[UsuariosTable.username],
-                        fechaHora = it[FichajesEventosTable.timestamp],
-                        tipo = "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}".lowercase(),
-                        latitud = it[FichajesEventosTable.latitud],
-                        longitud = it[FichajesEventosTable.longitud],
-                        accuracy = it[FichajesEventosTable.accuracy]
-                    )
-                }
-        }
-    }
 
     fun eliminarEvento(id: Int): Boolean {
 
         return transaction {
 
-            FichajesEventosTable
-                .deleteWhere {
-                    FichajesEventosTable.id eq id
-                } > 0
+            FichajesEventosTable.deleteWhere {
+                FichajesEventosTable.id eq id
+            } > 0
         }
     }
 
+
     fun contarFichajesHoy(): Long {
 
-        val inicioDia = java.time.LocalDate
-            .now()
-            .atStartOfDay(java.time.ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-
-        val finDia = java.time.LocalDate
-            .now()
-            .plusDays(1)
-            .atStartOfDay(java.time.ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
+        val (inicioDia, finDia) = todayRange()
 
         return transaction {
 
             FichajesEventosTable
-                .select {
+                .selectWhere {
+
                     (FichajesEventosTable.timestamp greaterEq inicioDia) and
                             (FichajesEventosTable.timestamp less finDia)
                 }
@@ -229,294 +136,88 @@ class FichajesEventosService {
         }
     }
 
+
     fun resumenFichajesHoy(): Map<String, Int> {
 
-        val inicioDia =
-            java.time.LocalDate.now()
-                .atStartOfDay(java.time.ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
-
-        val finDia =
-            java.time.LocalDate.now()
-                .plusDays(1)
-                .atStartOfDay(java.time.ZoneId.systemDefault())
-                .toInstant()
-                .toEpochMilli()
+        val (inicioDia, finDia) = todayRange()
 
         return transaction {
 
             val eventosHoy =
-                FichajesEventosTable
-                    .select {
-                        (FichajesEventosTable.timestamp greaterEq inicioDia) and
-                                (FichajesEventosTable.timestamp less finDia)
-                    }
+                FichajesEventosTable.selectWhere {
+
+                    (FichajesEventosTable.timestamp greaterEq inicioDia) and
+                            (FichajesEventosTable.timestamp less finDia)
+                }
 
             mapOf(
+
                 "entradas" to eventosHoy.count {
-                    it[FichajesEventosTable.accion] == "ENTRADA"
+
+                    AccionFichaje.valueOf(
+                        it[FichajesEventosTable.accion]
+                    ) == AccionFichaje.ENTRADA
                 },
+
                 "salidas" to eventosHoy.count {
-                    it[FichajesEventosTable.accion] == "SALIDA"
+
+                    AccionFichaje.valueOf(
+                        it[FichajesEventosTable.accion]
+                    ) == AccionFichaje.SALIDA
                 },
+
                 "viajes" to eventosHoy.count {
-                    it[FichajesEventosTable.accion].contains("VIAJE")
+
+                    AccionFichaje.valueOf(
+                        it[FichajesEventosTable.accion]
+                    ).name.contains("VIAJE")
                 },
+
                 "descansos" to eventosHoy.count {
-                    it[FichajesEventosTable.accion].contains("DESCANSO")
+
+                    AccionFichaje.valueOf(
+                        it[FichajesEventosTable.accion]
+                    ).name.contains("DESCANSO")
                 }
             )
         }
     }
+
 
     fun obtenerUltimoEvento(userId: Int): FichajeResponse? {
 
         return transaction {
 
             (FichajesEventosTable innerJoin UsuariosTable)
-                .select {
-                    FichajesEventosTable.userId eq userId
-                }
-                .orderBy(
-                    FichajesEventosTable.timestamp,
-                    SortOrder.DESC
-                )
-                .limit(1)
-                .map {
-
-                    FichajeResponse(
-                        id = it[FichajesEventosTable.id],
-                        userId = it[FichajesEventosTable.userId],
-                        username = it[UsuariosTable.username],
-                        fechaHora = it[FichajesEventosTable.timestamp],
-                        tipo =
-                            "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
-                                .lowercase(),
-                        latitud = it[FichajesEventosTable.latitud],
-                        longitud = it[FichajesEventosTable.longitud],
-                        accuracy = it[FichajesEventosTable.accuracy]
-                    )
-                }
-                .firstOrNull()
+                .latestFichajeResponse(userId)
         }
     }
+
 
     fun obtenerEventosHoy(userId: Int): List<FichajeResponse> {
 
+        val (inicioDia, finDia) = todayRange()
+
         return transaction {
 
-            val inicioDia =
-                java.time.LocalDate.now()
-                    .atStartOfDay(
-                        java.time.ZoneId.systemDefault()
-                    )
-                    .toInstant()
-                    .toEpochMilli()
-
-            val finDia =
-                java.time.LocalDate.now()
-                    .plusDays(1)
-                    .atStartOfDay(
-                        java.time.ZoneId.systemDefault()
-                    )
-                    .toInstant()
-                    .toEpochMilli() - 1
-
-
             (FichajesEventosTable innerJoin UsuariosTable)
-                .select {
-
-                    (FichajesEventosTable.userId eq userId) and
-                            (FichajesEventosTable.timestamp greaterEq inicioDia) and
-                            (FichajesEventosTable.timestamp lessEq finDia)
-                }
-                .orderBy(
-                    FichajesEventosTable.timestamp,
-                    SortOrder.ASC
+                .eventsBetweenDatesByUserOrdered(
+                    userId,
+                    inicioDia,
+                    finDia
                 )
-                .map {
-
-                    FichajeResponse(
-                        id = it[FichajesEventosTable.id],
-                        userId = it[FichajesEventosTable.userId],
-                        username = it[UsuariosTable.username],
-                        fechaHora = it[FichajesEventosTable.timestamp],
-                        tipo =
-                            "${it[FichajesEventosTable.accion]} · ${it[FichajesEventosTable.contexto]}"
-                                .lowercase(),
-                        latitud = it[FichajesEventosTable.latitud],
-                        longitud = it[FichajesEventosTable.longitud],
-                        accuracy = it[FichajesEventosTable.accuracy]
-                    )
-                }
+                .map { it.toFichajeResponse() }
         }
     }
 
-    fun calcularEstadoActual(
-        estadoAnterior: EstadoLaboral,
-        contexto: String,
-        accion: String
-    ): EstadoLaboral {
 
-        return when (estadoAnterior) {
-
-            EstadoLaboral.FUERA -> {
-
-                if (accion == "ENTRADA" && contexto == "TALLER")
-                    EstadoLaboral.EN_TALLER
-                else
-                    EstadoLaboral.FUERA
-            }
-
-
-            EstadoLaboral.EN_TALLER -> when {
-
-                accion == "INICIO_DESCANSO" ->
-                    EstadoLaboral.DESCANSO_TALLER
-
-                accion == "SALIDA" ->
-                    EstadoLaboral.FUERA
-
-                accion == "INICIO_VIAJE" && contexto == "OBRA" ->
-                    EstadoLaboral.VIAJE_IDA_OBRA
-
-                accion == "INICIO_VIAJE" && contexto == "REPARACION" ->
-                    EstadoLaboral.VIAJE_IDA_REPARACION
-
-                else -> estadoAnterior
-            }
-
-
-            EstadoLaboral.DESCANSO_TALLER -> {
-
-                if (accion == "FIN_DESCANSO")
-                    EstadoLaboral.EN_TALLER
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.VIAJE_IDA_OBRA -> {
-
-                if (accion == "FIN_VIAJE")
-                    EstadoLaboral.ESPERANDO_ENTRADA_OBRA
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.ESPERANDO_ENTRADA_OBRA -> {
-
-                if (accion == "ENTRADA")
-                    EstadoLaboral.EN_OBRA
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.EN_OBRA -> when {
-
-                accion == "INICIO_DESCANSO" ->
-                    EstadoLaboral.DESCANSO_OBRA
-
-                accion == "SALIDA" ->
-                    EstadoLaboral.FIN_JORNADA_OBRA
-
-                else -> estadoAnterior
-            }
-
-
-            EstadoLaboral.DESCANSO_OBRA -> {
-
-                if (accion == "FIN_DESCANSO")
-                    EstadoLaboral.EN_OBRA
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.FIN_JORNADA_OBRA -> when {
-
-                accion == "ENTRADA" ->
-                    EstadoLaboral.EN_OBRA
-
-                accion == "INICIO_VIAJE" && contexto == "TALLER" ->
-                    EstadoLaboral.VIAJE_VUELTA_TALLER
-
-                else -> estadoAnterior
-            }
-
-
-            EstadoLaboral.VIAJE_VUELTA_TALLER -> {
-
-                if (accion == "FIN_VIAJE")
-                    EstadoLaboral.EN_TALLER
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.VIAJE_IDA_REPARACION -> {
-
-                if (accion == "FIN_VIAJE")
-                    EstadoLaboral.ESPERANDO_ENTRADA_REPARACION
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION -> {
-
-                if (accion == "ENTRADA")
-                    EstadoLaboral.EN_REPARACION
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.EN_REPARACION -> when {
-
-                accion == "INICIO_DESCANSO" ->
-                    EstadoLaboral.DESCANSO_REPARACION
-
-                accion == "SALIDA" ->
-                    EstadoLaboral.FIN_JORNADA_REPARACION
-
-                else -> estadoAnterior
-            }
-
-
-            EstadoLaboral.DESCANSO_REPARACION -> {
-
-                if (accion == "FIN_DESCANSO")
-                    EstadoLaboral.EN_REPARACION
-                else
-                    estadoAnterior
-            }
-
-
-            EstadoLaboral.FIN_JORNADA_REPARACION -> when {
-
-                accion == "ENTRADA" ->
-                    EstadoLaboral.EN_REPARACION
-
-                accion == "INICIO_VIAJE" && contexto == "TALLER" ->
-                    EstadoLaboral.VIAJE_VUELTA_TALLER
-
-                else -> estadoAnterior
-            }
-        }
-    }
-
-    fun obtenerEstadoActual(
-        userId: Int
-    ): EstadoLaboral {
+    fun obtenerEstadoActual(userId: Int): EstadoLaboral {
 
         val eventos = transaction {
 
             FichajesEventosTable
-                .select {
+                .selectWhere {
+
                     FichajesEventosTable.userId eq userId
                 }
                 .orderBy(
@@ -525,381 +226,170 @@ class FichajesEventosService {
                 )
                 .map {
 
-                    it[FichajesEventosTable.contexto] to
-                            it[FichajesEventosTable.accion]
+                    ContextoFichaje.valueOf(
+                        it[FichajesEventosTable.contexto]
+                    ) to AccionFichaje.valueOf(
+                        it[FichajesEventosTable.accion]
+                    )
                 }
         }
 
         if (eventos.isEmpty())
             return EstadoLaboral.FUERA
 
-
         var estadoActual =
             EstadoLaboral.FUERA
-
 
         eventos.forEach { (contexto, accion) ->
 
             estadoActual =
                 calcularEstadoActual(
                     estadoActual,
-                    contexto,
-                    accion
+                    contexto.name,
+                    accion.name
                 )
         }
 
         return estadoActual
     }
 
-    fun validarTransicionEstado(
-        estadoActual: EstadoLaboral,
-        accion: String
-    ) {
-
-        val permitidas = when (estadoActual) {
-
-            EstadoLaboral.FUERA ->
-                listOf("ENTRADA")
-
-            EstadoLaboral.EN_TALLER ->
-                listOf("INICIO_DESCANSO", "SALIDA", "INICIO_VIAJE")
-
-            EstadoLaboral.DESCANSO_TALLER ->
-                listOf("FIN_DESCANSO")
-
-            EstadoLaboral.VIAJE_IDA_OBRA,
-            EstadoLaboral.VIAJE_IDA_REPARACION,
-            EstadoLaboral.VIAJE_VUELTA_TALLER ->
-                listOf("FIN_VIAJE")
-
-            EstadoLaboral.ESPERANDO_ENTRADA_OBRA,
-            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION ->
-                listOf("ENTRADA")
-
-            EstadoLaboral.EN_OBRA,
-            EstadoLaboral.EN_REPARACION ->
-                listOf("INICIO_DESCANSO", "SALIDA")
-
-            EstadoLaboral.DESCANSO_OBRA,
-            EstadoLaboral.DESCANSO_REPARACION ->
-                listOf("FIN_DESCANSO")
-
-            EstadoLaboral.FIN_JORNADA_OBRA,
-            EstadoLaboral.FIN_JORNADA_REPARACION ->
-                listOf("ENTRADA", "INICIO_VIAJE")
-        }
-
-        if (accion !in permitidas)
-            throw Exception("Acción no permitida desde el estado actual")
-    }
-
-
-    fun validarCambioContexto(
-        estadoActual: EstadoLaboral,
-        nuevoContexto: String
-    ) {
-
-        when (estadoActual) {
-
-            EstadoLaboral.EN_TALLER -> {
-
-                if (nuevoContexto !in listOf("TALLER", "OBRA", "REPARACION")) {
-
-                    throw Exception("Cambio de contexto inválido desde TALLER")
-                }
-            }
-
-            EstadoLaboral.EN_OBRA -> {
-
-                if (nuevoContexto !in listOf("OBRA", "TALLER")) {
-
-                    throw Exception("Debes volver al TALLER antes de cambiar contexto")
-                }
-            }
-
-            EstadoLaboral.EN_REPARACION -> {
-
-                if (nuevoContexto !in listOf("REPARACION", "TALLER")) {
-
-                    throw Exception("Debes volver al TALLER antes de cambiar contexto")
-                }
-            }
-
-            else -> {}
-        }
-    }
-
-    private fun obtenerUltimoEventoRaw(userId: Int): Pair<String, String>? {
-
-        return transaction {
-
-            FichajesEventosTable
-                .select { FichajesEventosTable.userId eq userId }
-                .orderBy(FichajesEventosTable.timestamp, SortOrder.DESC)
-                .limit(1)
-                .map {
-
-                    it[FichajesEventosTable.contexto] to
-                            it[FichajesEventosTable.accion]
-
-                }
-                .firstOrNull()
-        }
-    }
 
     fun obtenerEstadoDetallado(
         userId: Int
     ): EstadoActualResponse {
 
-        val ultimoEvento = transaction {
-
-            FichajesEventosTable
-                .select {
-                    FichajesEventosTable.userId eq userId
-                }
-                .orderBy(
-                    FichajesEventosTable.timestamp,
-                    SortOrder.DESC
-                )
-                .limit(1)
-                .firstOrNull()
-        }
-
+        val ultimoEvento =
+            obtenerUltimoEvento(userId)
 
         val estadoActual =
             obtenerEstadoActual(userId)
 
+        return ultimoEvento?.let {
 
-        if (ultimoEvento == null) {
+            val (accion, contexto) =
+                it.tipo.split(" · ")
 
-            return EstadoActualResponse(
-
+            EstadoActualResponse(
                 estado = estadoActual.name,
-
-                contexto = null,
-
-                accion = null,
-
-                timestamp = null
+                contexto = contexto,
+                accion = accion,
+                timestamp = it.fechaHora
             )
-        }
 
-
-        return EstadoActualResponse(
-
+        } ?: EstadoActualResponse(
             estado = estadoActual.name,
-
-            contexto =
-                ultimoEvento[FichajesEventosTable.contexto],
-
-            accion =
-                ultimoEvento[FichajesEventosTable.accion],
-
-            timestamp =
-                ultimoEvento[FichajesEventosTable.timestamp]
+            contexto = null,
+            accion = null,
+            timestamp = null
         )
     }
+
 
     fun obtenerAccionesPermitidas(
         userId: Int
     ): SiguientesAccionesResponse {
 
-        val estado = obtenerEstadoActual(userId)
+        val estado =
+            obtenerEstadoActual(userId)
 
-        val accionesTaller = mutableListOf<String>()
-        val accionesObra = mutableListOf<String>()
-        val accionesReparacion = mutableListOf<String>()
+        val accionesTaller =
+            mutableListOf<AccionPermitida>()
+
+        val accionesObra =
+            mutableListOf<AccionPermitida>()
+
+        val accionesReparacion =
+            mutableListOf<AccionPermitida>()
+
 
         when (estado) {
 
-            EstadoLaboral.FUERA -> {
-
-                accionesTaller += "ENTRADA_TALLER"
-            }
+            EstadoLaboral.FUERA ->
+                accionesTaller += AccionPermitida.ENTRADA_TALLER
 
             EstadoLaboral.EN_TALLER -> {
 
                 accionesTaller += listOf(
-                    "INICIO_DESCANSO_TALLER",
-                    "SALIDA_TALLER"
+                    AccionPermitida.INICIO_DESCANSO_TALLER,
+                    AccionPermitida.SALIDA_TALLER
                 )
 
-                accionesObra += "INICIO_VIAJE_OBRA"
-                accionesReparacion += "INICIO_VIAJE_REPARACION"
+                accionesObra +=
+                    AccionPermitida.INICIO_VIAJE_OBRA
+
+                accionesReparacion +=
+                    AccionPermitida.INICIO_VIAJE_REPARACION
             }
 
-            EstadoLaboral.DESCANSO_TALLER -> {
+            EstadoLaboral.DESCANSO_TALLER ->
+                accionesTaller +=
+                    AccionPermitida.FIN_DESCANSO_TALLER
 
-                accionesTaller += "FIN_DESCANSO_TALLER"
-            }
+            EstadoLaboral.VIAJE_IDA_OBRA ->
+                accionesObra +=
+                    AccionPermitida.FIN_VIAJE_OBRA
 
-            EstadoLaboral.VIAJE_IDA_OBRA -> {
+            EstadoLaboral.ESPERANDO_ENTRADA_OBRA ->
+                accionesObra +=
+                    AccionPermitida.ENTRADA_OBRA
 
-                accionesObra += "FIN_VIAJE_OBRA"
-            }
-
-            EstadoLaboral.ESPERANDO_ENTRADA_OBRA -> {
-
-                accionesObra += "ENTRADA_OBRA"
-            }
-
-            EstadoLaboral.EN_OBRA -> {
-
+            EstadoLaboral.EN_OBRA ->
                 accionesObra += listOf(
-                    "INICIO_DESCANSO_OBRA",
-                    "SALIDA_OBRA"
+                    AccionPermitida.INICIO_DESCANSO_OBRA,
+                    AccionPermitida.SALIDA_OBRA
                 )
-            }
 
-            EstadoLaboral.DESCANSO_OBRA -> {
-
-                accionesObra += "FIN_DESCANSO_OBRA"
-            }
+            EstadoLaboral.DESCANSO_OBRA ->
+                accionesObra +=
+                    AccionPermitida.FIN_DESCANSO_OBRA
 
             EstadoLaboral.FIN_JORNADA_OBRA -> {
 
-                accionesObra += "ENTRADA_OBRA"
-                accionesTaller += "INICIO_VIAJE_TALLER"
+                accionesObra +=
+                    AccionPermitida.ENTRADA_OBRA
+
+                accionesTaller +=
+                    AccionPermitida.INICIO_VIAJE_TALLER
             }
 
-            EstadoLaboral.VIAJE_VUELTA_TALLER -> {
+            EstadoLaboral.VIAJE_VUELTA_TALLER ->
+                accionesTaller +=
+                    AccionPermitida.FIN_VIAJE_TALLER
 
-                accionesTaller += "FIN_VIAJE_TALLER"
-            }
+            EstadoLaboral.VIAJE_IDA_REPARACION ->
+                accionesReparacion +=
+                    AccionPermitida.FIN_VIAJE_REPARACION
 
-            EstadoLaboral.VIAJE_IDA_REPARACION -> {
+            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION ->
+                accionesReparacion +=
+                    AccionPermitida.ENTRADA_REPARACION
 
-                accionesReparacion += "FIN_VIAJE_REPARACION"
-            }
-
-            EstadoLaboral.ESPERANDO_ENTRADA_REPARACION -> {
-
-                accionesReparacion += "ENTRADA_REPARACION"
-            }
-
-            EstadoLaboral.EN_REPARACION -> {
-
+            EstadoLaboral.EN_REPARACION ->
                 accionesReparacion += listOf(
-                    "INICIO_DESCANSO_REPARACION",
-                    "SALIDA_REPARACION"
+                    AccionPermitida.INICIO_DESCANSO_REPARACION,
+                    AccionPermitida.SALIDA_REPARACION
                 )
-            }
 
-            EstadoLaboral.DESCANSO_REPARACION -> {
-
-                accionesReparacion += "FIN_DESCANSO_REPARACION"
-            }
+            EstadoLaboral.DESCANSO_REPARACION ->
+                accionesReparacion +=
+                    AccionPermitida.FIN_DESCANSO_REPARACION
 
             EstadoLaboral.FIN_JORNADA_REPARACION -> {
 
-                accionesReparacion += "ENTRADA_REPARACION"
-                accionesTaller += "INICIO_VIAJE_TALLER"
+                accionesReparacion +=
+                    AccionPermitida.ENTRADA_REPARACION
+
+                accionesTaller +=
+                    AccionPermitida.INICIO_VIAJE_TALLER
             }
         }
 
         return SiguientesAccionesResponse(
-
-            estado = estado.name,
-
-            accionesTaller = accionesTaller,
-
-            accionesObra = accionesObra,
-
-            accionesReparacion = accionesReparacion
+            estado.name,
+            accionesTaller,
+            accionesObra,
+            accionesReparacion
         )
-    }
-
-    fun calcularHorasTrabajadasHoy(userId: Int): Long {
-
-        val eventos = transaction {
-
-            val inicioDia =
-                java.time.LocalDate.now()
-                    .atStartOfDay(java.time.ZoneId.systemDefault())
-                    .toInstant()
-                    .toEpochMilli()
-
-            val finDia =
-                java.time.LocalDate.now()
-                    .plusDays(1)
-                    .atStartOfDay(java.time.ZoneId.systemDefault())
-                    .toInstant()
-                    .toEpochMilli()
-
-            FichajesEventosTable
-                .select {
-
-                    (FichajesEventosTable.userId eq userId) and
-                            (FichajesEventosTable.timestamp greaterEq inicioDia) and
-                            (FichajesEventosTable.timestamp less finDia)
-
-                }
-                .orderBy(FichajesEventosTable.timestamp to SortOrder.ASC)
-                .map {
-
-                    Triple(
-                        it[FichajesEventosTable.timestamp],
-                        it[FichajesEventosTable.contexto],
-                        it[FichajesEventosTable.accion]
-                    )
-                }
-        }
-
-        var trabajando = false
-        var enDescanso = false
-
-        var inicioTrabajo: Long? = null
-        var totalTiempo = 0L
-
-        eventos.forEach { (timestamp, contexto, accion) ->
-
-            when (accion) {
-
-                "ENTRADA" -> {
-
-                    if (!trabajando) {
-
-                        trabajando = true
-                        inicioTrabajo = timestamp
-                    }
-                }
-
-                "SALIDA" -> {
-
-                    if (trabajando && inicioTrabajo != null) {
-
-                        totalTiempo += timestamp - inicioTrabajo!!
-                        trabajando = false
-                        inicioTrabajo = null
-                    }
-                }
-
-                "INICIO_DESCANSO" -> {
-
-                    if (trabajando && !enDescanso && inicioTrabajo != null) {
-
-                        totalTiempo += timestamp - inicioTrabajo!!
-                        enDescanso = true
-                    }
-                }
-
-                "FIN_DESCANSO" -> {
-
-                    if (trabajando && enDescanso) {
-
-                        inicioTrabajo = timestamp
-                        enDescanso = false
-                    }
-                }
-            }
-        }
-
-        if (trabajando && inicioTrabajo != null) {
-
-            totalTiempo += System.currentTimeMillis() - inicioTrabajo!!
-        }
-
-        return totalTiempo
     }
 
     fun formatearTiempo(ms: Long): String {

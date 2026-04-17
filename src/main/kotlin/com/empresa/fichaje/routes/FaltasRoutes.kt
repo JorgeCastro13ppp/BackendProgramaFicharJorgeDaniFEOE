@@ -1,7 +1,10 @@
 package com.empresa.fichaje.routes
 
-import com.empresa.fichaje.models.FaltaRequest
+import com.empresa.fichaje.dto.request.FaltaRequest
 import com.empresa.fichaje.services.FaltasService
+import com.empresa.fichaje.utils.extractFilters
+import com.empresa.fichaje.utils.isAdmin
+import com.empresa.fichaje.utils.role
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.JWTPrincipal
@@ -28,13 +31,10 @@ fun Route.faltasRoutes() {
 
                 val principal = call.principal<JWTPrincipal>()!!
 
-                val role = principal.payload
-                    .getClaim("role")
-                    .asString()
-
-                if (role != "admin") {
+                if (!principal.isAdmin()) {
 
                     call.respond(HttpStatusCode.Forbidden)
+
                     return@post
                 }
 
@@ -76,34 +76,22 @@ fun Route.faltasRoutes() {
             val principal =
                 call.principal<JWTPrincipal>()!!
 
-            val userId =
-                principal.payload
-                    .getClaim("userId")
-                    .asInt()
+            val filters =
+                call.extractFilters(
+                    principal,
+                    allowUserOverride = false
+                )
 
             val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-
-            val tipo =
-                call.request.queryParameters["tipo"]
-
-            val sortBy =
-                call.request.queryParameters["sortBy"]
-
-            val order =
-                call.request.queryParameters["order"]
-
+                principal.role()
 
             val result =
                 service.obtener(
-                    userId,
+                    filters.userId!!,
                     role,
-                    tipo,
-                    sortBy,
-                    order
+                    filters.tipo,
+                    filters.sortBy,
+                    filters.order
                 )
 
             call.respond(result)
@@ -121,14 +109,10 @@ fun Route.faltasRoutes() {
             val principal =
                 call.principal<JWTPrincipal>()!!
 
-            val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-            if (role != "admin") {
+            if (!principal.isAdmin()) {
 
                 call.respond(HttpStatusCode.Forbidden)
+
                 return@delete
             }
 

@@ -1,25 +1,28 @@
 package com.empresa.fichaje.routes
 
-
-import com.empresa.fichaje.database.UsuariosTable
-import com.empresa.fichaje.models.LoginRequest
-import com.empresa.fichaje.models.LoginResponse
+import com.empresa.fichaje.dto.request.LoginRequest
+import com.empresa.fichaje.dto.response.LoginResponse
 import com.empresa.fichaje.services.AuthService
 import com.empresa.fichaje.services.JwtService
+import com.empresa.fichaje.utils.isAdmin
+import com.empresa.fichaje.utils.userId
 import io.ktor.http.*
-import io.ktor.server.application.*
 import io.ktor.server.auth.authenticate
 import io.ktor.server.auth.jwt.JWTPrincipal
 import io.ktor.server.auth.principal
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import org.jetbrains.exposed.sql.selectAll
-import org.jetbrains.exposed.sql.transactions.transaction
 
 fun Route.authRoutes() {
 
     val authService = AuthService()
+
+    /*
+    ========================
+    LOGIN
+    ========================
+    */
 
     post("/login") {
 
@@ -36,7 +39,6 @@ fun Route.authRoutes() {
                 )
 
             call.respond(
-
                 LoginResponse(
                     message = "Login correcto",
                     token = token,
@@ -56,14 +58,20 @@ fun Route.authRoutes() {
 
     authenticate("auth-jwt") {
 
+        /*
+        ========================
+        REGISTER (ADMIN)
+        ========================
+        */
+
         post("/register") {
 
-            val principal = call.principal<JWTPrincipal>()
+            val principal = call.principal<JWTPrincipal>()!!
 
-            val role = principal?.payload?.getClaim("role")?.asString()
+            if (!principal.isAdmin()) {
 
-            if (role != "admin") {
                 call.respond(HttpStatusCode.Forbidden, "No autorizado")
+
                 return@post
             }
 
@@ -74,22 +82,23 @@ fun Route.authRoutes() {
             call.respond(mapOf("message" to "Usuario creado"))
         }
 
+
+        /*
+        ========================
+        LISTADO USUARIOS (ADMIN)
+        ========================
+        */
+
         get("/admin/usuarios") {
 
             val principal = call.principal<JWTPrincipal>()!!
 
-            val role =
-                principal.payload
-                    .getClaim("role")
-                    .asString()
-
-            if (role != "admin") {
+            if (!principal.isAdmin()) {
 
                 call.respond(HttpStatusCode.Forbidden)
 
                 return@get
             }
-
 
             val roleFilter =
                 call.request.queryParameters["role"]
@@ -100,7 +109,6 @@ fun Route.authRoutes() {
             val order =
                 call.request.queryParameters["order"]
 
-
             val usuarios =
                 authService.obtenerUsuarios(
                     roleFilter,
@@ -108,49 +116,65 @@ fun Route.authRoutes() {
                     order
                 )
 
-
             call.respond(usuarios)
         }
+
+
+        /*
+        ========================
+        ELIMINAR USUARIO (ADMIN)
+        ========================
+        */
 
         delete("/admin/usuarios/{id}") {
 
             val principal = call.principal<JWTPrincipal>()!!
 
-            val role = principal.payload
-                .getClaim("role")
-                .asString()
+            if (!principal.isAdmin()) {
 
-            if (role != "admin") {
                 call.respond(HttpStatusCode.Forbidden)
+
                 return@delete
             }
 
-            val id = call.parameters["id"]?.toIntOrNull()
+            val id =
+                call.parameters["id"]?.toIntOrNull()
 
             if (id == null) {
-                call.respond(HttpStatusCode.BadRequest, "ID inválido")
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    "ID inválido"
+                )
+
                 return@delete
             }
 
-            // 🚫 Evitar que el admin elimine su propia cuenta
-            val currentUserId = principal.payload
-                .getClaim("userId")
-                .asInt()
+            // 🚫 Evitar auto-eliminación admin
 
-            if (currentUserId == id) {
+            if (principal.userId() == id) {
+
                 call.respond(
                     HttpStatusCode.BadRequest,
                     "No puedes eliminar tu propio usuario"
                 )
+
                 return@delete
             }
 
-            val eliminado = authService.eliminarUsuario(id)
+            val eliminado =
+                authService.eliminarUsuario(id)
 
             if (eliminado) {
+
                 call.respond(HttpStatusCode.OK)
+
             } else {
-                call.respond(HttpStatusCode.NotFound, "Usuario no encontrado")
+
+                call.respond(
+                    HttpStatusCode.NotFound,
+                    "Usuario no encontrado"
+                )
             }
         }
     }

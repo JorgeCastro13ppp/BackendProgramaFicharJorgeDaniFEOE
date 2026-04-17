@@ -2,13 +2,11 @@ package com.empresa.fichaje
 
 import com.empresa.fichaje.routes.*
 import io.ktor.server.application.*
-import io.ktor.server.http.content.files
-import io.ktor.server.http.content.static
-import io.ktor.server.routing.*
+import io.ktor.server.http.content.staticFiles
+import io.ktor.server.routing.routing
+import java.io.File
 
 fun Application.configureRouting() {
-
-
 
     routing {
 
@@ -25,9 +23,11 @@ fun Application.configureRouting() {
         fichajesEventosRoutes()
 
         horasRoutes()
+        horasExtrasRoutes()
 
-        static("/files") {
-            files("uploads")
-        }
+        staticFiles(
+            remotePath = "/files",
+            dir = File("uploads")
+        )
     }
 }
