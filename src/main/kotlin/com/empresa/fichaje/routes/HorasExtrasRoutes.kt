@@ -6,15 +6,13 @@ import com.empresa.fichaje.utils.isAdmin
 import com.empresa.fichaje.utils.requirePrincipal
 import com.empresa.fichaje.utils.userId
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.auth.*
-import io.ktor.server.auth.jwt.*
-import io.ktor.server.response.*
+import io.ktor.server.auth.authenticate
+import io.ktor.server.response.respond
 import io.ktor.server.routing.*
 
 fun Route.horasExtrasRoutes() {
 
-    val service =
-        HorasExtrasService()
+    val service = HorasExtrasService()
 
     authenticate("auth-jwt") {
 
@@ -25,6 +23,15 @@ fun Route.horasExtrasRoutes() {
         */
 
         get("/horas-extra/pendientes") {
+
+            val principal =
+                call.requirePrincipal()
+
+            if (!principal.isAdmin()) {
+
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
 
             call.respond(
                 service.obtenerPendientes()
@@ -78,6 +85,48 @@ fun Route.horasExtrasRoutes() {
 
             call.respond(
                 service.buscarHorasExtras(filter)
+            )
+        }
+
+
+        /*
+        ========================
+        RESUMEN USUARIO (APP)
+        ========================
+        */
+
+        get("/horas-extra/resumen-mias") {
+
+            val principal =
+                call.requirePrincipal()
+
+            call.respond(
+                service.resumenUsuario(
+                    principal.userId()
+                )
+            )
+        }
+
+
+        /*
+        ========================
+        RESUMEN EMPRESA (ADMIN)
+        ========================
+        */
+
+        get("/horas-extra/resumen") {
+
+            val principal =
+                call.requirePrincipal()
+
+            if (!principal.isAdmin()) {
+
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
+
+            call.respond(
+                service.resumenEmpresa()
             )
         }
     }

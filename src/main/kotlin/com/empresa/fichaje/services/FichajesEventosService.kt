@@ -21,6 +21,8 @@ import org.jetbrains.exposed.sql.transactions.transaction
 
 class FichajesEventosService {
 
+    private val horasService = HorasService()
+
     fun crearFichajeEvento(
         request: FichajeEventoRequest
     ): Int {
@@ -53,13 +55,12 @@ class FichajesEventosService {
                 }[FichajesEventosTable.id]
 
 
-            if (request.accion.name == "SALIDA") {
+            if (request.accion == AccionFichaje.SALIDA) {
 
-                HorasService()
-                    .calcularJornadaLegal(
-                        request.userId,
-                        request.timestamp
-                    )
+                horasService.calcularJornadaLegal(
+                    request.userId,
+                    request.timestamp
+                )
             }
 
             insertedId

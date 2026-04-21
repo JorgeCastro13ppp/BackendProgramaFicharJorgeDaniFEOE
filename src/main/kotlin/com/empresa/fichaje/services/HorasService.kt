@@ -12,11 +12,6 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import org.jetbrains.exposed.sql.insert
-import org.jetbrains.exposed.sql.selectAll
-
-
-
 
 
 class HorasService {
@@ -31,17 +26,18 @@ class HorasService {
             FichajesEventosTable
                 .selectAll()
                 .where {
-
                     (FichajesEventosTable.userId eq userId) and
                             (FichajesEventosTable.timestamp greaterEq fechaInicio) and
                             (FichajesEventosTable.timestamp lessEq fechaFin)
                 }
-                .orderBy(FichajesEventosTable.timestamp to SortOrder.ASC)
+                .orderBy(
+                    FichajesEventosTable.timestamp to SortOrder.ASC
+                )
                 .toList()
 
 
         if (eventos.isEmpty())
-            return@transaction HorasDiaResponse(0, 0, 0, 0)
+            return@transaction HorasDiaResponse(0,0,0,0)
 
 
         var inicioTrabajo: Long? = null
@@ -69,34 +65,26 @@ class HorasService {
                 AccionFichaje.ENTRADA ->
                     inicioTrabajo = timestamp
 
-
                 AccionFichaje.SALIDA ->
                     inicioTrabajo?.let {
-
                         tiempoTrabajo += timestamp - it
                         inicioTrabajo = null
                     }
 
-
                 AccionFichaje.INICIO_VIAJE ->
                     inicioViaje = timestamp
 
-
                 AccionFichaje.FIN_VIAJE ->
                     inicioViaje?.let {
-
                         tiempoViaje += timestamp - it
                         inicioViaje = null
                     }
 
-
                 AccionFichaje.INICIO_DESCANSO ->
                     inicioDescanso = timestamp
 
-
                 AccionFichaje.FIN_DESCANSO ->
                     inicioDescanso?.let {
-
                         tiempoDescanso += timestamp - it
                         inicioDescanso = null
                     }
@@ -104,65 +92,29 @@ class HorasService {
         }
 
 
-        /*
-        ========================
-        CIERRE INTERVALOS ABIERTOS
-        ========================
-        */
+        inicioTrabajo?.let { tiempoTrabajo += fechaFin - it }
+        inicioViaje?.let { tiempoViaje += fechaFin - it }
+        inicioDescanso?.let { tiempoDescanso += fechaFin - it }
 
-        inicioTrabajo?.let {
-            tiempoTrabajo += fechaFin - it
-        }
-
-        inicioViaje?.let {
-            tiempoViaje += fechaFin - it
-        }
-
-        inicioDescanso?.let {
-            tiempoDescanso += fechaFin - it
-        }
-
-
-        /*
-        ========================
-        TIEMPO TOTAL REAL
-        ========================
-        */
 
         val tiempoTotal =
             tiempoTrabajo + tiempoViaje + tiempoDescanso
 
 
         HorasDiaResponse(
-            tiempoTotal = tiempoTotal,
-            tiempoTrabajo = tiempoTrabajo,
-            tiempoViaje = tiempoViaje,
-            tiempoDescanso = tiempoDescanso
+            tiempoTotal,
+            tiempoTrabajo,
+            tiempoViaje,
+            tiempoDescanso
         )
     }
 
-    fun calcularHorasTrabajadasHoy(userId: Int): Long {
-
-        val (inicioDia, finDia) = todayRange()
-
-        val timeline = transaction {
-
-            FichajesEventosTable.dailyTimeline(
-                userId,
-                inicioDia,
-                finDia
-            )
-        }
-
-        return timeline.totalTrabajo()
-    }
 
     fun resumenHorasHoy(userId: Int): HorasDiaResponse {
 
         val (inicioDia, finDia) = todayRange()
 
         val timeline = transaction {
-
             FichajesEventosTable.dailyTimeline(
                 userId,
                 inicioDia,
@@ -171,16 +123,13 @@ class HorasService {
         }
 
         return HorasDiaResponse(
-
-            tiempoTotal = timeline.tiempoTotalJornada(),
-
-            tiempoTrabajo = timeline.totalTrabajo(),
-
-            tiempoViaje = timeline.totalViaje(),
-
-            tiempoDescanso = timeline.totalDescanso()
+            timeline.tiempoTotalJornada(),
+            timeline.totalTrabajo(),
+            timeline.totalViaje(),
+            timeline.totalDescanso()
         )
     }
+
 
     fun calcularJornadaLegal(
         userId: Int,
@@ -219,7 +168,6 @@ class HorasService {
                 .toInstant()
                 .toEpochMilli()
 
-
         val finDia =
             fecha.plusDays(1)
                 .atStartOfDay(zona)
@@ -241,31 +189,25 @@ class HorasService {
         val salidaReal =
             timeline.lastSalida()
 
-
         if (entradaReal == null)
             return@transaction
 
 
         val inicioLegalEmpresa =
-            fecha.atTime(7, 0)
+            fecha.atTime(7,0)
                 .atZone(zona)
                 .toInstant()
                 .toEpochMilli()
 
-
         val finLegalEmpresa =
-            fecha.atTime(15, 0)
+            fecha.atTime(15,0)
                 .atZone(zona)
                 .toInstant()
                 .toEpochMilli()
 
 
         val entradaLegal =
-            if (entradaReal > inicioLegalEmpresa)
-                entradaReal
-            else
-                inicioLegalEmpresa
-
+            maxOf(entradaReal, inicioLegalEmpresa)
 
         val salidaLegal =
             when {
@@ -275,71 +217,43 @@ class HorasService {
             }
 
 
+        val descanso =
+            timeline.totalDescanso()
+
+
         val tiempoLegal =
-            salidaLegal - entradaLegal
+            (salidaLegal - entradaLegal) - descanso
 
 
         val tiempoExtraDetectado =
             if (salidaReal != null && salidaReal > finLegalEmpresa)
                 salidaReal - finLegalEmpresa
-            else
-                0L
+            else 0L
 
 
-        val tiempoTrabajoReal =
-            timeline.totalTrabajo()
-
-        val tiempoViajeReal =
-            timeline.totalViaje()
-
-        val tiempoDescansoReal =
-            timeline.totalDescanso()
+        val minutosExtra =
+            tiempoExtraDetectado / 60000
 
 
         JornadasLaboralesTable.insert {
 
-            it[JornadasLaboralesTable.userId] =
-                userId
-
-            it[JornadasLaboralesTable.fecha] =
-                fechaStr
-
-            it[JornadasLaboralesTable.entradaReal] =
-                entradaReal
-
-            it[JornadasLaboralesTable.salidaReal] =
-                salidaReal
-
-            it[JornadasLaboralesTable.entradaLegal] =
-                entradaLegal
-
-            it[JornadasLaboralesTable.salidaLegal] =
-                salidaLegal
-
-            it[JornadasLaboralesTable.tiempoTrabajoReal] =
-                tiempoTrabajoReal
-
-            it[JornadasLaboralesTable.tiempoViajeReal] =
-                tiempoViajeReal
-
-            it[JornadasLaboralesTable.tiempoDescansoReal] =
-                tiempoDescansoReal
-
-            it[JornadasLaboralesTable.tiempoLegal] =
-                tiempoLegal
-
-            it[JornadasLaboralesTable.tiempoExtraDetectado] =
-                tiempoExtraDetectado
-
-            it[JornadasLaboralesTable.cerradaAutomaticamente] =
-                (salidaReal == null)
-
-            it[JornadasLaboralesTable.procesada] =
-                true
+            it[JornadasLaboralesTable.userId] = userId
+            it[JornadasLaboralesTable.fecha] = fechaStr
+            it[JornadasLaboralesTable.entradaReal] = entradaReal
+            it[JornadasLaboralesTable.salidaReal] = salidaReal
+            it[JornadasLaboralesTable.entradaLegal] = entradaLegal
+            it[JornadasLaboralesTable.salidaLegal] = salidaLegal
+            it[JornadasLaboralesTable.tiempoTrabajoReal] = timeline.totalTrabajo()
+            it[JornadasLaboralesTable.tiempoViajeReal] = timeline.totalViaje()
+            it[JornadasLaboralesTable.tiempoDescansoReal] = descanso
+            it[JornadasLaboralesTable.tiempoLegal] = tiempoLegal
+            it[JornadasLaboralesTable.tiempoExtraDetectado] = tiempoExtraDetectado
+            it[JornadasLaboralesTable.cerradaAutomaticamente] = (salidaReal == null)
+            it[JornadasLaboralesTable.procesada] = true
         }
 
 
-        if (tiempoExtraDetectado > 0L) {
+        if (minutosExtra > 0) {
 
             val yaExiste =
                 HorasExtrasTable
@@ -355,43 +269,12 @@ class HorasService {
 
                 HorasExtrasTable.insert {
 
-                    it[HorasExtrasTable.userId] =
-                        userId
-
-                    it[HorasExtrasTable.fecha] =
-                        fechaStr
-
-                    it[HorasExtrasTable.minutosExtra] =
-                        tiempoExtraDetectado
-
-                    it[HorasExtrasTable.estado] =
-                        "pendiente"
+                    it[HorasExtrasTable.userId] = userId
+                    it[HorasExtrasTable.fecha] = fechaStr
+                    it[HorasExtrasTable.minutosExtra] = minutosExtra
+                    it[HorasExtrasTable.estado] = "pendiente"
                 }
             }
-        }
-    }
-    fun actualizarEstadoHorasExtra(
-        id: Int,
-        nuevoEstado: String,
-        adminId: Int,
-        comentario: String?
-    ) = transaction {
-
-        val estadoValido =
-            listOf("pendiente", "aprobado", "rechazado")
-
-        if (nuevoEstado !in estadoValido)
-            error("Estado inválido")
-
-
-        HorasExtrasTable.update({
-            HorasExtrasTable.id eq id
-        }) {
-
-            it[estado] = nuevoEstado
-            it[aprobadoPor] = adminId
-            it[fechaRevision] = System.currentTimeMillis()
-            it[HorasExtrasTable.comentario] = comentario
         }
     }
 }

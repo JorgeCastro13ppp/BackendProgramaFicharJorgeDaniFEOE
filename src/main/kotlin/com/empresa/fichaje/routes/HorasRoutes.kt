@@ -2,6 +2,7 @@ package com.empresa.fichaje.routes
 
 import com.empresa.fichaje.dto.request.HorasDiaRequest
 import com.empresa.fichaje.dto.request.HorasExtraEstadoRequest
+import com.empresa.fichaje.dto.request.HorasExtrasFilter
 import com.empresa.fichaje.services.HorasExtrasService
 import com.empresa.fichaje.services.HorasService
 import com.empresa.fichaje.utils.isAdmin
@@ -185,27 +186,24 @@ fun Route.horasRoutes() {
                 return@get
             }
 
-            val estado =
-                call.request.queryParameters["estado"]
+            val filter = HorasExtrasFilter(
 
-            val userId =
-                call.request.queryParameters["userId"]
-                    ?.toIntOrNull()
+                estado =
+                    call.request.queryParameters["estado"],
 
-            val desde =
-                call.request.queryParameters["desde"]
+                userId =
+                    call.request.queryParameters["userId"]
+                        ?.toIntOrNull(),
 
-            val hasta =
-                call.request.queryParameters["hasta"]
+                desde =
+                    call.request.queryParameters["desde"],
 
+                hasta =
+                    call.request.queryParameters["hasta"]
+            )
 
             call.respond(
-                extrasService.buscarHorasExtras(
-                    estado,
-                    userId,
-                    desde,
-                    hasta
-                )
+                extrasService.buscarHorasExtras(filter)
             )
         }
 
