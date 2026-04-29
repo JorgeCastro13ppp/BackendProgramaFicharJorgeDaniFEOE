@@ -56,6 +56,10 @@ object JornadasLaboralesTable : Table("jornadas_laborales") {
     val procesada =
         bool("procesada").default(false)
 
+    val corregidaPor = integer("corregida_por").nullable()
+    val comentarioAdmin = varchar("comentario_admin", 255).nullable()
+    val fechaCorreccion = long("fecha_correccion").nullable()
+
 
     override val primaryKey =
         PrimaryKey(id)

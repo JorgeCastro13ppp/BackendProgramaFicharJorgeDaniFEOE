@@ -27,6 +27,10 @@ class FichajesEventosService {
         request: FichajeEventoRequest
     ): Int {
 
+        horasService.cerrarJornadaAnteriorSiExiste(
+            request.userId
+        )
+
         val estadoActual =
             obtenerEstadoActual(request.userId)
 

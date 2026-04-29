@@ -1,6 +1,7 @@
 package com.empresa.fichaje.database.mappers
 
 import com.empresa.fichaje.database.tables.HorasExtrasTable
+import com.empresa.fichaje.database.tables.UsuariosTable
 import com.empresa.fichaje.dto.response.HorasExtrasResponse
 import org.jetbrains.exposed.sql.ResultRow
 
@@ -13,6 +14,9 @@ fun ResultRow.toHorasExtrasResponse(): HorasExtrasResponse {
 
         userId =
             this[HorasExtrasTable.userId],
+
+        username = this[UsuariosTable.username],
+
 
         fecha =
             this[HorasExtrasTable.fecha],

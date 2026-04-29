@@ -10,6 +10,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
+import io.ktor.server.plugins.origin
 
 fun Route.documentRoutes() {
 
@@ -73,7 +74,22 @@ fun Route.documentRoutes() {
                     order = filters.order
                 )
 
-            call.respond(docs)
+
+            val baseUrl =
+                System.getenv("BASE_URL")
+                    ?: "${call.request.origin.scheme}://${call.request.host()}:${call.request.port()}/uploads/"
+
+
+            val docsConUrlCompleta =
+                docs.map {
+
+                    it.copy(
+                        url = baseUrl + it.url
+                    )
+                }
+
+
+            call.respond(docsConUrlCompleta)
         }
 
 
@@ -152,7 +168,22 @@ fun Route.documentRoutes() {
                     order = filters.order
                 )
 
-            call.respond(docs)
+
+            val baseUrl =
+                System.getenv("BASE_URL")
+                    ?: "${call.request.origin.scheme}://${call.request.host()}:${call.request.port()}/uploads/"
+
+
+            val docsConUrlCompleta =
+                docs.map {
+
+                    it.copy(
+                        url = baseUrl + it.url
+                    )
+                }
+
+
+            call.respond(docsConUrlCompleta)
         }
     }
 }

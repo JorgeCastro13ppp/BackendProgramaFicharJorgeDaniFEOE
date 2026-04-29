@@ -11,15 +11,6 @@ import java.io.File
 
 class DocumentService {
 
-    private val baseUrl =
-        System.getenv("BASE_URL")
-            ?: "http://localhost:8080/uploads/"
-
-    private fun construirUrlCompleta(
-        ruta: String
-    ): String = "$baseUrl$ruta"
-
-
     fun createDocument(
         request: DocumentRequest
     ) = transaction {
@@ -89,9 +80,9 @@ class DocumentService {
                     username = it[UsuariosTable.username],
                     nombre = it[DocumentosTable.nombre],
                     tipo = it[DocumentosTable.tipo],
-                    url = construirUrlCompleta(
-                        it[DocumentosTable.url]
-                    )
+
+                    // ⚠️ ahora devolvemos solo la ruta relativa
+                    url = it[DocumentosTable.url]
                 )
             }
     }

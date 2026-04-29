@@ -15,7 +15,9 @@ fun Route.horasExtrasRoutes() {
     val service = HorasExtrasService()
 
     authenticate("auth-jwt") {
-
+        options("{...}") {
+            call.respond(HttpStatusCode.OK)
+        }
         /*
         ========================
         ADMIN - PENDIENTES
@@ -128,6 +130,44 @@ fun Route.horasExtrasRoutes() {
             call.respond(
                 service.resumenEmpresa()
             )
+        }
+
+        put("/horas-extra/{id}") {
+
+            val principal = call.requirePrincipal()
+
+            if (!principal.isAdmin()) {
+                call.respond(HttpStatusCode.Forbidden)
+                return@put
+            }
+
+            val id = call.parameters["id"]!!.toInt()
+
+            val estado =
+                call.request.queryParameters["estado"]
+                    ?: error("Estado requerido")
+
+            val comentario =
+                call.request.queryParameters["comentario"]
+
+            if (estado == "rechazado" && comentario.isNullOrBlank()) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf("error" to "Comentario obligatorio al rechazar")
+                )
+
+                return@put
+            }
+
+            service.actualizarEstadoHorasExtra(
+                id,
+                estado,
+                principal.userId(),
+                comentario
+            )
+
+            call.respond(mapOf("message" to "Estado actualizado"))
         }
     }
 }

@@ -2,8 +2,11 @@ package com.empresa.fichaje.services
 
 import com.empresa.fichaje.database.mappers.toHorasExtrasResponse
 import com.empresa.fichaje.database.tables.HorasExtrasTable
+import com.empresa.fichaje.database.tables.UsuariosTable
 import com.empresa.fichaje.dto.request.HorasExtrasFilter
 import com.empresa.fichaje.dto.response.HorasExtrasResponse
+import com.empresa.fichaje.dto.response.HorasExtrasResumenResponse
+import org.jetbrains.exposed.sql.JoinType
 import org.jetbrains.exposed.sql.SortOrder
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.andWhere
@@ -27,6 +30,12 @@ class HorasExtrasService {
         transaction {
 
             HorasExtrasTable
+                .join(
+                    UsuariosTable,
+                    JoinType.INNER,
+                    HorasExtrasTable.userId,
+                    UsuariosTable.id
+                )
                 .selectAll()
                 .where {
                     HorasExtrasTable.estado eq "pendiente"
@@ -50,6 +59,12 @@ class HorasExtrasService {
         transaction {
 
             HorasExtrasTable
+                .join(
+                    UsuariosTable,
+                    JoinType.INNER,
+                    HorasExtrasTable.userId,
+                    UsuariosTable.id
+                )
                 .selectAll()
                 .where {
                     HorasExtrasTable.userId eq userId
@@ -72,6 +87,12 @@ class HorasExtrasService {
     ): List<HorasExtrasResponse> = transaction {
 
         HorasExtrasTable
+            .join(
+                UsuariosTable,
+                JoinType.INNER,
+                HorasExtrasTable.userId,
+                UsuariosTable.id
+            )
             .selectAll()
             .apply {
 
@@ -202,40 +223,42 @@ class HorasExtrasService {
     ========================
     */
 
-    fun resumenEmpresa(): Map<String, Any> = transaction {
+    fun resumenEmpresa(): HorasExtrasResumenResponse =
+        transaction {
 
-        val extras =
-            HorasExtrasTable.selectAll()
+            val extras =
+                HorasExtrasTable.selectAll()
 
-        val pendientes =
-            extras.count {
-                it[HorasExtrasTable.estado] == "pendiente"
-            }
+            val pendientes =
+                extras.count {
+                    it[HorasExtrasTable.estado] == "pendiente"
+                }
 
-        val aprobadas =
-            extras.count {
-                it[HorasExtrasTable.estado] == "aprobado"
-            }
-
-        val rechazadas =
-            extras.count {
-                it[HorasExtrasTable.estado] == "rechazado"
-            }
-
-        val totalMinutos =
-            extras
-                .filter {
+            val aprobadas =
+                extras.count {
                     it[HorasExtrasTable.estado] == "aprobado"
                 }
-                .sumOf {
-                    it[HorasExtrasTable.minutosExtra]
+
+            val rechazadas =
+                extras.count {
+                    it[HorasExtrasTable.estado] == "rechazado"
                 }
 
-        mapOf(
-            "pendientes" to pendientes,
-            "aprobadas" to aprobadas,
-            "rechazadas" to rechazadas,
-            "totalMinutos" to totalMinutos
-        )
-    }
+            val totalMinutos =
+                extras
+                    .filter {
+                        it[HorasExtrasTable.estado] == "aprobado"
+                    }
+                    .sumOf {
+                        it[HorasExtrasTable.minutosExtra]
+                    }
+                    .toInt()
+
+            HorasExtrasResumenResponse(
+                pendientes,
+                aprobadas,
+                rechazadas,
+                totalMinutos
+            )
+        }
 }

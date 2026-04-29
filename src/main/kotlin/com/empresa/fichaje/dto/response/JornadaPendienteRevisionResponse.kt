@@ -3,23 +3,13 @@ package com.empresa.fichaje.dto.response
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class HorasExtrasResponse(
-
+data class JornadaPendienteRevisionResponse(
     val id: Int,
-
     val userId: Int,
-
     val username: String,
-
     val fecha: String,
-
-    val minutosExtra: Long,
-
-    val estado: String,
-
-    val aprobadoPor: Int?,
-
-    val fechaRevision: Long?,
-
-    val comentario: String?
+    val entradaReal: Long?,
+    val salidaReal: Long?,
+    val cerradaAutomaticamente: Boolean,
+    val tiempoExtraDetectado: Long
 )

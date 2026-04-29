@@ -29,5 +29,7 @@ fun Application.configureRouting() {
             remotePath = "/files",
             dir = File("uploads")
         )
+
+        jornadasRoutes()
     }
 }

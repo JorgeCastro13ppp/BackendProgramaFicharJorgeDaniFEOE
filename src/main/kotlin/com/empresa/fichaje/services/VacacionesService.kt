@@ -26,6 +26,8 @@ class VacacionesService {
         val inicio = LocalDate.parse(fechaInicio)
         val fin = LocalDate.parse(fechaFin)
 
+        val anio = inicio.year
+
         if (fin.isBefore(inicio)) {
             error("La fecha fin no puede ser anterior a la fecha inicio")
         }
@@ -63,7 +65,7 @@ class VacacionesService {
 
             val restantes =
                 15 - usadosNavidad -
-                        diasPendientesNavidad(userId)
+                        diasPendientesNavidad(userId, anio)
 
             if (diasSolicitados > restantes) {
                 error("No tienes suficientes días disponibles en Navidad")
@@ -73,7 +75,7 @@ class VacacionesService {
 
             val restantes =
                 15 - usadosLibres -
-                        diasPendientesLibres(userId)
+                        diasPendientesLibres(userId,anio)
 
             if (diasSolicitados > restantes) {
                 error("No tienes suficientes días libres disponibles")
@@ -165,11 +167,11 @@ class VacacionesService {
 
         val restantesNavidad =
             15 - usadosNavidad -
-                    diasPendientesNavidad(userId)
+                    diasPendientesNavidad(userId,anio)
 
         val restantesLibres =
             15 - usadosLibres -
-                    diasPendientesLibres(userId)
+                    diasPendientesLibres(userId,anio)
 
         return Triple(
             restantesNavidad,
@@ -316,7 +318,7 @@ class VacacionesService {
                     resumen[VacacionesResumenTable.diasNavidadUsados]
 
                 val pendientesNavidad =
-                    diasPendientesNavidad(userId)
+                    diasPendientesNavidad(userId,anio)
 
                 val restantes =
                     15 - usadosNavidad - pendientesNavidad
@@ -346,9 +348,10 @@ class VacacionesService {
         nuevoEstado: String
     ) = transaction {
 
-        val estadoEnum =
+        val estadoNuevo =
             nuevoEstado.toEstadoVacacionesOrNull()
                 ?: error("Estado de vacaciones inválido")
+
 
         val vacaciones =
             VacacionesTable
@@ -356,56 +359,125 @@ class VacacionesService {
                 .where { VacacionesTable.id eq id }
                 .single()
 
+
+        val estadoAnterior =
+            vacaciones[VacacionesTable.estado]
+
+
+        if (estadoAnterior == estadoNuevo.name.lowercase())
+            return@transaction
+
+
         VacacionesTable.update(
             { VacacionesTable.id eq id }
         ) {
+
             it[estado] =
-                estadoEnum.name.lowercase()
+                estadoNuevo.name.lowercase()
         }
 
-        if (estadoEnum != EstadoVacaciones.APROBADO)
-            return@transaction
 
         val userId =
             vacaciones[VacacionesTable.userId]
+
 
         val inicio =
             LocalDate.parse(
                 vacaciones[VacacionesTable.fechaInicio]
             )
 
+
         val fin =
             LocalDate.parse(
                 vacaciones[VacacionesTable.fechaFin]
             )
 
+
         val dias =
-            ChronoUnit.DAYS.between(inicio, fin).toInt() + 1
+            ChronoUnit.DAYS
+                .between(inicio, fin)
+                .toInt() + 1
+
 
         val resumen =
             obtenerResumen(userId, inicio.year)
 
+
         val resumenId =
             resumen[VacacionesResumenTable.id]
 
-        if (vacaciones[VacacionesTable.tipo] == "navidad") {
 
-            VacacionesResumenTable.update({
-                VacacionesResumenTable.id eq resumenId
-            }) {
+        val esNavidad =
+            vacaciones[VacacionesTable.tipo] == "navidad"
 
-                it[diasNavidadUsados] =
-                    resumen[VacacionesResumenTable.diasNavidadUsados] + dias
+
+        /*
+        ========================
+        RESTAR SI ERA APROBADO
+        ========================
+        */
+
+        if (estadoAnterior == "aprobado") {
+
+            if (esNavidad) {
+
+                VacacionesResumenTable.update({
+                    VacacionesResumenTable.id eq resumenId
+                }) {
+
+                    it[diasNavidadUsados] =
+                        maxOf(
+                            0,
+                            resumen[VacacionesResumenTable.diasNavidadUsados] - dias
+                        )
+                }
+
+            } else {
+
+                VacacionesResumenTable.update({
+                    VacacionesResumenTable.id eq resumenId
+                }) {
+
+                    it[diasLibresUsados] =
+                        maxOf(
+                            0,
+                            resumen[VacacionesResumenTable.diasLibresUsados] - dias
+                        )
+                }
             }
+        }
 
-        } else {
 
-            VacacionesResumenTable.update({
-                VacacionesResumenTable.id eq resumenId
-            }) {
+        /*
+        ========================
+        SUMAR SI AHORA ES APROBADO
+        ========================
+        */
 
-                it[diasLibresUsados] =
-                    resumen[VacacionesResumenTable.diasLibresUsados] + dias
+        if (estadoNuevo == EstadoVacaciones.APROBADO) {
+
+            if (esNavidad) {
+
+                VacacionesResumenTable.update({
+                    VacacionesResumenTable.id eq resumenId
+                }) {
+
+                    it[diasNavidadUsados] =
+                        resumen[VacacionesResumenTable.diasNavidadUsados] + dias
+                }
+
+            } else {
+
+                VacacionesResumenTable.update({
+                    VacacionesResumenTable.id eq resumenId
+                }) {
+
+                    it[diasLibresUsados] =
+                        maxOf(
+                            0,
+                            resumen[VacacionesResumenTable.diasLibresUsados] - dias
+                        )
+                }
             }
         }
     }
@@ -428,49 +500,67 @@ class VacacionesService {
 
 
     fun diasPendientesNavidad(
-        userId: Int
+        userId: Int,
+        anio: Int
     ): Int {
 
         return VacacionesTable
             .selectAll()
             .where {
+
                 (VacacionesTable.userId eq userId) and
                         (VacacionesTable.estado eq "pendiente") and
-                        (VacacionesTable.tipo eq "navidad")
+                        (VacacionesTable.tipo eq "navidad") and
+                        (VacacionesTable.fechaInicio like "$anio%")
             }
             .sumOf {
 
                 val inicio =
-                    LocalDate.parse(it[VacacionesTable.fechaInicio])
+                    LocalDate.parse(
+                        it[VacacionesTable.fechaInicio]
+                    )
 
                 val fin =
-                    LocalDate.parse(it[VacacionesTable.fechaFin])
+                    LocalDate.parse(
+                        it[VacacionesTable.fechaFin]
+                    )
 
-                ChronoUnit.DAYS.between(inicio, fin).toInt() + 1
+                ChronoUnit.DAYS
+                    .between(inicio, fin)
+                    .toInt() + 1
             }
     }
 
 
     fun diasPendientesLibres(
-        userId: Int
+        userId: Int,
+        anio: Int
     ): Int {
 
         return VacacionesTable
             .selectAll()
             .where {
+
                 (VacacionesTable.userId eq userId) and
                         (VacacionesTable.estado eq "pendiente") and
-                        (VacacionesTable.tipo eq "libre")
+                        (VacacionesTable.tipo eq "libre") and
+                        (VacacionesTable.fechaInicio like "$anio%")
             }
             .sumOf {
 
                 val inicio =
-                    LocalDate.parse(it[VacacionesTable.fechaInicio])
+                    LocalDate.parse(
+                        it[VacacionesTable.fechaInicio]
+                    )
 
                 val fin =
-                    LocalDate.parse(it[VacacionesTable.fechaFin])
+                    LocalDate.parse(
+                        it[VacacionesTable.fechaFin]
+                    )
 
-                ChronoUnit.DAYS.between(inicio, fin).toInt() + 1
+                ChronoUnit.DAYS
+                    .between(inicio, fin)
+                    .toInt() + 1
             }
     }
 }
