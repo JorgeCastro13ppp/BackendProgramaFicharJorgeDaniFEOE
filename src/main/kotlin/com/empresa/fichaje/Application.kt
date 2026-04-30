@@ -21,6 +21,11 @@ import java.time.LocalTime
 import com.empresa.fichaje.services.HorasService
 import io.ktor.server.http.content.files
 import io.ktor.server.http.content.static
+import java.io.FileInputStream
+
+import com.google.auth.oauth2.GoogleCredentials
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 
 fun main(args: Array<String>) {
     EngineMain.main(args)
@@ -117,4 +122,17 @@ fun Application.module() {
             files("uploads")
         }
     }
+
+    val serviceAccount =
+        environment.classLoader
+            .getResourceAsStream("firebase-key.json")
+            ?: error("firebase-key.json no encontrado")
+
+    FirebaseApp.initializeApp(
+        FirebaseOptions.builder()
+            .setCredentials(
+                GoogleCredentials.fromStream(serviceAccount)
+            )
+            .build()
+    )
 }

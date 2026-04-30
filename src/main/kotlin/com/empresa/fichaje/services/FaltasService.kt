@@ -24,17 +24,14 @@ class FaltasService {
                     "Tipo de falta inválido"
                 )
 
-
         val existeFaltaEseDia =
             FaltasTable
                 .selectAll()
                 .where {
-
                     (FaltasTable.userId eq userId) and
                             (FaltasTable.fecha eq fecha)
                 }
                 .count() > 0
-
 
         if (existeFaltaEseDia) {
 
@@ -42,7 +39,6 @@ class FaltasService {
                 "El usuario ya tiene una falta registrada ese día"
             )
         }
-
 
         FaltasTable.insert {
 
@@ -52,6 +48,22 @@ class FaltasService {
                 tipoEnum.name.lowercase()
 
             it[FaltasTable.descripcion] = descripcion
+        }
+
+        // 🔔 Enviar notificación push al usuario afectado
+
+        val deviceTokenService =
+            DeviceTokenService()
+
+        val tokens =
+            deviceTokenService.getTokens(userId)
+
+        tokens.forEach { token ->
+
+            PushService.sendFaltaNotification(
+                token = token,
+                motivo = descripcion
+            )
         }
     }
 

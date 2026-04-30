@@ -34,3 +34,5 @@ local.properties
 # Temporary files
 *.tmp
 *.swp
+
+resources/firebase-key.json

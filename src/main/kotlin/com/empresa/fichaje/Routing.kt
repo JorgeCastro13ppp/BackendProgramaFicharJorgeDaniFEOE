@@ -31,5 +31,7 @@ fun Application.configureRouting() {
         )
 
         jornadasRoutes()
+
+        deviceRoutes()
     }
 }

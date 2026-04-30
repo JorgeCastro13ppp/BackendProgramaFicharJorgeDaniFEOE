@@ -1,5 +1,6 @@
 package com.empresa.fichaje.database
 
+import com.empresa.fichaje.database.tables.DeviceTokensTable
 import com.empresa.fichaje.database.tables.DocumentosTable
 import com.empresa.fichaje.database.tables.FaltasTable
 import com.empresa.fichaje.database.tables.FichajesEventosTable
@@ -48,7 +49,9 @@ object DatabaseFactory {
                 DocumentosTable,
 
                 // incidencias
-                FaltasTable
+                FaltasTable,
+
+                DeviceTokensTable
             )
         }
     }
