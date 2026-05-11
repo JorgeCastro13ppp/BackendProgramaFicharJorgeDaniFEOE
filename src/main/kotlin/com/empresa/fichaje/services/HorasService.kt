@@ -123,6 +123,7 @@ class HorasService {
         val (inicioDia, finDia) = todayRange()
 
         val timeline = transaction {
+
             FichajesEventosTable.dailyTimeline(
                 userId,
                 inicioDia,
@@ -130,10 +131,24 @@ class HorasService {
             )
         }
 
+        /*
+        ========================
+        NOW REALISTA
+        ========================
+        */
+
+        val now =
+            timeline.lastSalida()
+                ?: System.currentTimeMillis()
+
         return HorasDiaResponse(
+
             timeline.tiempoTotalJornada(),
-            timeline.totalTrabajo(),
+
+            timeline.totalTrabajo(now),
+
             timeline.totalViaje(),
+
             timeline.totalDescanso()
         )
     }
@@ -141,20 +156,13 @@ class HorasService {
 
     fun calcularJornadaLegal(
         userId: Int,
-        timestampSalida: Long?
+        fecha: LocalDate,
+        timestampSalida: Long?,
+        esAutomatica: Boolean = false
     ) = transaction {
 
         val zona = ZoneId.systemDefault()
-
-        val fecha =
-            Instant.ofEpochMilli(
-                timestampSalida ?: System.currentTimeMillis()
-            )
-                .atZone(zona)
-                .toLocalDate()
-
         val fechaStr = fecha.toString()
-
 
         /*
         ========================
@@ -172,8 +180,7 @@ class HorasService {
                 }
                 .count() > 0
 
-        if (yaProcesada)
-            return@transaction
+        if (yaProcesada) return@transaction
 
 
         /*
@@ -242,20 +249,19 @@ class HorasService {
 
         /*
         ========================
-        SALIDA REAL (AUTO-CIERRE)
+        SALIDA REAL
         ========================
         */
 
         var salidaReal =
             timeline.lastSalida()
 
-        var salidaAutomatica = false
+        var salidaAutomatica = esAutomatica
 
 
         if (salidaReal == null) {
 
             salidaReal = finLegalEmpresa
-
             salidaAutomatica = true
         }
 
@@ -303,7 +309,7 @@ class HorasService {
         val tiempoLegal =
             maxOf(
                 0L,
-                (salidaLegal - entradaLegal) - tiempoDescansoReal
+                salidaLegal - entradaLegal
             )
 
 
@@ -319,9 +325,22 @@ class HorasService {
             else
                 0L
 
-
         val minutosExtra =
             tiempoExtraDetectado / 60000
+
+
+        /*
+        ========================
+        🔥 TIPO DE INCIDENCIA (MEJORA PRO)
+        ========================
+        */
+
+        val tipoIncidencia =
+            when {
+                tiempoExtraDetectado > 0 -> "EXTRA"
+                salidaAutomatica -> "AUTO"
+                else -> "NORMAL"
+            }
 
 
         /*
@@ -339,8 +358,13 @@ class HorasService {
             it[JornadasLaboralesTable.entradaLegal] = entradaLegal
             it[JornadasLaboralesTable.salidaLegal] = salidaLegal
 
+           /*it[JornadasLaboralesTable.tiempoTrabajoReal] =
+                timeline.totalTrabajo(salidaReal)*/
             it[JornadasLaboralesTable.tiempoTrabajoReal] =
-                timeline.totalTrabajo()
+                timeline.tiempoTrabajoEfectivo(
+                    tiempoLegal,
+                    tiempoExtraDetectado
+                )
 
             it[JornadasLaboralesTable.tiempoViajeReal] =
                 timeline.totalViaje()
@@ -357,8 +381,10 @@ class HorasService {
             it[JornadasLaboralesTable.cerradaAutomaticamente] =
                 salidaAutomatica
 
-            it[JornadasLaboralesTable.procesada] =
-                true
+            it[JornadasLaboralesTable.procesada] = true
+
+            // 🔥 AÑADE ESTE CAMPO EN TABLA
+            it[JornadasLaboralesTable.tipoIncidencia] = tipoIncidencia
         }
 
 
@@ -390,13 +416,29 @@ class HorasService {
                 }
             }
         }
+
+        val eventos =
+            FichajesEventosTable
+                .selectAll()
+                .where {
+                    (FichajesEventosTable.userId eq userId) and
+                            (FichajesEventosTable.timestamp greaterEq inicioDia) and
+                            (FichajesEventosTable.timestamp less finDia)
+                }
+                .toList()
+
+        println("EVENTOS RAW: $eventos")
     }
 
-    fun cerrarJornadaAnteriorSiExiste(userId: Int) = transaction {
+    fun cerrarJornadaAnteriorSiExiste(
+        userId: Int,
+        fechaEvento: LocalDate
+    ) = transaction {
 
         val ultimoEvento =
             FichajesEventosTable
-                .select {
+                .selectAll()
+                .where {
                     FichajesEventosTable.userId eq userId
                 }
                 .orderBy(
@@ -413,7 +455,6 @@ class HorasService {
                 ultimoEvento[FichajesEventosTable.accion]
             )
 
-
         if (accion != AccionFichaje.ENTRADA)
             return@transaction
 
@@ -421,13 +462,29 @@ class HorasService {
         val timestamp =
             ultimoEvento[FichajesEventosTable.timestamp]
 
+        val fechaUltimoEvento =
+            Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+
+
+        /*
+        ========================
+        SOLO DÍAS ANTERIORES
+        ========================
+        */
+
+        if (fechaUltimoEvento == fechaEvento)
+            return@transaction
+
 
         calcularJornadaLegal(
-            userId,
-            timestampSalida = null
+            userId = userId,
+            fecha = fechaUltimoEvento,
+            timestampSalida = null,
+            esAutomatica = true
         )
     }
-
     fun cerrarJornadasAbiertasDelDiaAnterior() = transaction {
 
         val zona = ZoneId.systemDefault()
@@ -502,9 +559,22 @@ class HorasService {
 
             if (accion == AccionFichaje.ENTRADA) {
 
+                val finJornada = ayer
+                    .atTime(15, 0)
+                    .atZone(zona)
+                    .toInstant()
+                    .toEpochMilli()
+
+                insertarSalidaAutomatica(
+                    userId = userId,
+                    timestampSalida = finJornada
+                )
+
                 calcularJornadaLegal(
-                    userId,
-                    timestampSalida = null
+                    userId = userId,
+                    fecha = ayer,
+                    timestampSalida = finJornada,
+                    esAutomatica = true
                 )
             }
         }
@@ -571,9 +641,13 @@ class HorasService {
         ========================
         */
 
+        val fechaLocal = LocalDate.parse(fecha)
+
         calcularJornadaLegal(
-            userId,
-            nuevaSalidaReal
+            userId = userId,
+            fecha = fechaLocal,
+            timestampSalida = nuevaSalidaReal,
+            esAutomatica = false
         )
     }
 
@@ -618,7 +692,7 @@ class HorasService {
         hasta: String? = null
     ): List<JornadaResponse> = transaction {
 
-        JornadasLaboralesTable
+        (JornadasLaboralesTable innerJoin UsuariosTable)
             .selectAll()
             .apply {
 
@@ -627,14 +701,12 @@ class HorasService {
                 }
 
                 desde?.let {
-
                     andWhere {
                         JornadasLaboralesTable.fecha greaterEq it
                     }
                 }
 
                 hasta?.let {
-
                     andWhere {
                         JornadasLaboralesTable.fecha lessEq it
                     }
@@ -647,10 +719,14 @@ class HorasService {
 
                 JornadaResponse(
                     id = it[JornadasLaboralesTable.id],
+                    userId = it[JornadasLaboralesTable.userId],
+                    username = it[UsuariosTable.username], // ✅ ahora sí existe
                     fecha = it[JornadasLaboralesTable.fecha],
                     entradaReal = it[JornadasLaboralesTable.entradaReal],
                     salidaReal = it[JornadasLaboralesTable.salidaReal],
                     tiempoLegal = it[JornadasLaboralesTable.tiempoLegal],
+                    tiempoTrabajoReal =
+                        it[JornadasLaboralesTable.tiempoTrabajoReal],
                     tiempoExtraDetectado =
                         it[JornadasLaboralesTable.tiempoExtraDetectado],
                     cerradaAutomaticamente =
@@ -664,7 +740,6 @@ class HorasService {
                 )
             }
     }
-
     fun obtenerResumenMensual(
         userId: Int,
         mes: String
@@ -801,21 +876,60 @@ class HorasService {
         )
     }
 
+    fun obtenerResumenPendientes(userId: Int?): JornadaResumenGlobalResponse = transaction {
+
+        val query =
+            JornadasLaboralesTable
+                .selectAll()
+                .where {
+                    (
+                            (JornadasLaboralesTable.cerradaAutomaticamente eq true) or
+                                    (JornadasLaboralesTable.tiempoExtraDetectado greater 0L)
+                            ) and
+                            (JornadasLaboralesTable.corregidaPor.isNull()) and
+                            (
+                                    if (userId != null)
+                                        JornadasLaboralesTable.userId eq userId
+                                    else
+                                        Op.TRUE
+                                    )
+                }
+
+        val lista = query.toList() // 🔥 CLAVE
+
+        val total = lista.size
+
+        val automaticas =
+            lista.count {
+                it[JornadasLaboralesTable.cerradaAutomaticamente]
+            }
+
+        val corregidas = 0L
+
+        JornadaResumenGlobalResponse(
+            mes = "pendientes",
+            totalJornadas = total.toLong(),
+            jornadasAutomaticas = automaticas.toLong(),
+            jornadasCorregidas = corregidas,
+            totalTiempoLegal = 0L,
+            totalTiempoExtra = 0L,
+            totalTrabajadores = 0L
+        )
+    }
+
     fun obtenerJornadasPendientesRevision():
             List<JornadaPendienteRevisionResponse> = transaction {
 
-        JornadasLaboralesTable
+        (JornadasLaboralesTable innerJoin UsuariosTable)
             .selectAll()
             .where {
-
-                (JornadasLaboralesTable.cerradaAutomaticamente eq true) and
-
+                (
+                        (JornadasLaboralesTable.cerradaAutomaticamente eq true) or
+                                (JornadasLaboralesTable.tiempoExtraDetectado greater 0L)
+                        ) and
                         (JornadasLaboralesTable.corregidaPor.isNull())
-
             }
-            .orderBy(
-                JornadasLaboralesTable.fecha to SortOrder.ASC
-            )
+            .orderBy(JornadasLaboralesTable.fecha to SortOrder.ASC)
             .map {
 
                 JornadaPendienteRevisionResponse(
@@ -828,11 +942,9 @@ class HorasService {
 
                     fecha = it[JornadasLaboralesTable.fecha],
 
-                    entradaReal =
-                        it[JornadasLaboralesTable.entradaReal],
+                    entradaReal = it[JornadasLaboralesTable.entradaReal],
 
-                    salidaReal =
-                        it[JornadasLaboralesTable.salidaReal],
+                    salidaReal = it[JornadasLaboralesTable.salidaReal],
 
                     cerradaAutomaticamente =
                         it[JornadasLaboralesTable.cerradaAutomaticamente],
@@ -1066,5 +1178,163 @@ class HorasService {
 
 
         incidencias
+    }
+
+    fun obtenerTodasLasJornadas(): List<JornadaResponse> = transaction {
+
+        (JornadasLaboralesTable innerJoin UsuariosTable)
+            .selectAll()
+            .orderBy(JornadasLaboralesTable.fecha to SortOrder.DESC)
+            .map {
+
+                JornadaResponse(
+                    id = it[JornadasLaboralesTable.id],
+                    userId = it[JornadasLaboralesTable.userId],     // 🔥
+                    username = it[UsuariosTable.username],
+                    fecha = it[JornadasLaboralesTable.fecha],
+                    entradaReal = it[JornadasLaboralesTable.entradaReal],
+                    salidaReal = it[JornadasLaboralesTable.salidaReal],
+                    tiempoLegal = it[JornadasLaboralesTable.tiempoLegal],
+                    tiempoTrabajoReal =
+                        it[JornadasLaboralesTable.tiempoTrabajoReal],
+                    tiempoExtraDetectado = it[JornadasLaboralesTable.tiempoExtraDetectado],
+                    cerradaAutomaticamente = it[JornadasLaboralesTable.cerradaAutomaticamente],
+                    corregidaPor = it[JornadasLaboralesTable.corregidaPor],
+                    comentarioAdmin = it[JornadasLaboralesTable.comentarioAdmin],
+                    fechaCorreccion = it[JornadasLaboralesTable.fechaCorreccion]
+                )
+            }
+    }
+
+    private fun insertarSalidaAutomatica(
+        userId: Int,
+        timestampSalida: Long
+    ) {
+
+        val ultimoEvento =
+            FichajesEventosTable
+                .selectAll()
+                .where {
+                    FichajesEventosTable.userId eq userId
+                }
+                .orderBy(
+                    FichajesEventosTable.timestamp to SortOrder.DESC
+                )
+                .limit(1)
+                .firstOrNull()
+
+        val contexto =
+            ultimoEvento?.get(FichajesEventosTable.contexto)
+                ?: "TALLER"
+
+        FichajesEventosTable.insert {
+
+            it[FichajesEventosTable.userId] = userId
+            it[FichajesEventosTable.timestamp] = timestampSalida
+
+            it[FichajesEventosTable.accion] = "SALIDA"
+
+            // 🔥 CONTEXTO REAL
+            it[FichajesEventosTable.contexto] = contexto
+
+            it[FichajesEventosTable.latitud] = 0.0
+            it[FichajesEventosTable.longitud] = 0.0
+            it[FichajesEventosTable.accuracy] = 0.0
+        }
+    }
+
+    fun cerrarJornadasPorFecha(fecha: String) = transaction {
+
+        val zona = ZoneId.systemDefault()
+
+        val dia = LocalDate.parse(fecha)
+
+        val inicio =
+            dia.atStartOfDay(zona)
+                .toInstant()
+                .toEpochMilli()
+
+        val fin =
+            dia.plusDays(1)
+                .atStartOfDay(zona)
+                .toInstant()
+                .toEpochMilli()
+
+
+        val usuarios =
+            FichajesEventosTable
+                .selectAll()
+                .where {
+                    (FichajesEventosTable.timestamp greaterEq inicio) and
+                            (FichajesEventosTable.timestamp less fin)
+                }
+                .map { it[FichajesEventosTable.userId] }
+                .distinct()
+
+
+        println("Usuarios encontrados: $usuarios")
+
+
+        usuarios.forEach { userId ->
+
+            val ultimoEvento =
+                FichajesEventosTable
+                    .selectAll()
+                    .where {
+                        (FichajesEventosTable.userId eq userId) and
+                                (FichajesEventosTable.timestamp greaterEq inicio) and
+                                (FichajesEventosTable.timestamp less fin)
+                    }
+                    .orderBy(
+                        FichajesEventosTable.timestamp to SortOrder.DESC
+                    )
+                    .limit(1)
+                    .firstOrNull()
+                    ?: return@forEach
+
+
+            val accion =
+                AccionFichaje.valueOf(
+                    ultimoEvento[FichajesEventosTable.accion]
+                )
+
+
+            if (accion == AccionFichaje.ENTRADA) {
+
+                val finJornada = dia
+                    .atTime(15, 0)
+                    .atZone(zona)
+                    .toInstant()
+                    .toEpochMilli()
+
+
+                val yaTieneSalida =
+                    FichajesEventosTable
+                        .selectAll()
+                        .where {
+                            (FichajesEventosTable.userId eq userId) and
+                                    (FichajesEventosTable.timestamp eq finJornada) and
+                                    (FichajesEventosTable.accion eq "SALIDA")
+                        }
+                        .any()
+
+
+                if (!yaTieneSalida) {
+
+                    insertarSalidaAutomatica(
+                        userId = userId,
+                        timestampSalida = finJornada
+                    )
+                }
+
+
+                calcularJornadaLegal(
+                    userId = userId,
+                    fecha = dia,
+                    timestampSalida = finJornada,
+                    esAutomatica = true
+                )
+            }
+        }
     }
 }

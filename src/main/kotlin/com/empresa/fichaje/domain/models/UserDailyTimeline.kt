@@ -17,10 +17,13 @@ data class UserDailyTimeline(
     val eventos: List<TimelineEvent>
 ) {
 
-    fun totalTrabajo(now: Long = System.currentTimeMillis()): Long {
+    fun totalTrabajo(now: Long): Long {
 
         var inicioTrabajo: Long? = null
+
         var enDescanso = false
+        var enViaje = false
+
         var total = 0L
 
         eventos.forEach { evento ->
@@ -28,10 +31,14 @@ data class UserDailyTimeline(
             when (evento.accion) {
 
                 AccionFichaje.ENTRADA -> {
-                    inicioTrabajo = evento.timestamp
+
+                    if (!enDescanso && !enViaje) {
+                        inicioTrabajo = evento.timestamp
+                    }
                 }
 
                 AccionFichaje.SALIDA -> {
+
                     inicioTrabajo?.let {
                         total += evento.timestamp - it
                         inicioTrabajo = null
@@ -39,28 +46,67 @@ data class UserDailyTimeline(
                 }
 
                 AccionFichaje.INICIO_DESCANSO -> {
+
                     inicioTrabajo?.let {
                         total += evento.timestamp - it
-                        enDescanso = true
+                        inicioTrabajo = null
                     }
+
+                    enDescanso = true
                 }
 
                 AccionFichaje.FIN_DESCANSO -> {
-                    if (enDescanso) {
-                        inicioTrabajo = evento.timestamp
-                        enDescanso = false
+
+                    enDescanso = false
+                    inicioTrabajo = evento.timestamp
+                }
+
+                AccionFichaje.INICIO_VIAJE -> {
+
+                    inicioTrabajo?.let {
+                        total += evento.timestamp - it
+                        inicioTrabajo = null
                     }
+
+                    enViaje = true
+                }
+
+                AccionFichaje.FIN_VIAJE -> {
+
+                    enViaje = false
+                    inicioTrabajo = evento.timestamp
                 }
 
                 else -> {}
             }
         }
 
+        /*
+        ========================
+        JORNADA ABIERTA
+        ========================
+        */
+
         inicioTrabajo?.let {
+
             total += now - it
         }
 
         return total
+    }
+
+    fun tiempoTrabajoEfectivo(
+        tiempoLegal: Long,
+        tiempoExtra: Long
+    ): Long {
+
+        return maxOf(
+            0L,
+            tiempoLegal +
+                    tiempoExtra -
+                    totalDescanso() -
+                    totalViaje()
+        )
     }
 
 

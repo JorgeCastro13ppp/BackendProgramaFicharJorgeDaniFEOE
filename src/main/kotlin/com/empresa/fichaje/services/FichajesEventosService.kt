@@ -18,6 +18,10 @@ import com.empresa.fichaje.utils.toFichajeResponse
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
+import java.time.Instant
+
+import java.time.LocalDate
+import java.time.ZoneId
 
 class FichajesEventosService {
 
@@ -26,13 +30,39 @@ class FichajesEventosService {
     fun crearFichajeEvento(
         request: FichajeEventoRequest
     ): Int {
-
+        val fechaEvento =
+            Instant.ofEpochMilli(request.timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
         horasService.cerrarJornadaAnteriorSiExiste(
-            request.userId
+            request.userId,
+            fechaEvento
         )
 
+        /*
+        ========================
+        FECHA DEL EVENTO
+        ========================
+        */
+
+
+
+
+        /*
+        ========================
+        ESTADO ACTUAL
+        ========================
+        */
+
         val estadoActual =
-            obtenerEstadoActual(request.userId)
+            obtenerEstadoPersistente(request.userId)
+
+
+        /*
+        ========================
+        VALIDACIONES
+        ========================
+        */
 
         validarTransicionEstado(
             estadoActual,
@@ -43,6 +73,13 @@ class FichajesEventosService {
             estadoActual,
             request.contexto.name
         )
+
+
+        /*
+        ========================
+        INSERTAR EVENTO
+        ========================
+        */
 
         return transaction {
 
@@ -56,14 +93,27 @@ class FichajesEventosService {
                     it[latitud] = request.latitud
                     it[longitud] = request.longitud
                     it[accuracy] = request.accuracy
+
                 }[FichajesEventosTable.id]
 
+
+            /*
+            ========================
+            CALCULAR JORNADA
+            ========================
+            */
 
             if (request.accion == AccionFichaje.SALIDA) {
 
                 horasService.calcularJornadaLegal(
-                    request.userId,
-                    request.timestamp
+
+                    userId = request.userId,
+
+                    fecha = fechaEvento,
+
+                    timestampSalida = request.timestamp,
+
+                    esAutomatica = false
                 )
             }
 
@@ -216,13 +266,71 @@ class FichajesEventosService {
     }
 
 
-    fun obtenerEstadoActual(userId: Int): EstadoLaboral {
+    fun obtenerEstadoDia(
+        userId: Int,
+        fecha: LocalDate
+    ): EstadoLaboral {
+
+        val zona =
+            ZoneId.systemDefault()
+
+        val inicioDia =
+            fecha.atStartOfDay(zona)
+                .toInstant()
+                .toEpochMilli()
+
+        val finDia =
+            fecha.plusDays(1)
+                .atStartOfDay(zona)
+                .toInstant()
+                .toEpochMilli()
 
         val eventos = transaction {
 
             FichajesEventosTable
-                .selectWhere {
+                .eventsBetweenDatesByUserOrdered(
+                    userId,
+                    inicioDia,
+                    finDia
+                )
+                .map {
 
+                    ContextoFichaje.valueOf(
+                        it[FichajesEventosTable.contexto]
+                    ) to AccionFichaje.valueOf(
+                        it[FichajesEventosTable.accion]
+                    )
+                }
+        }
+
+        if (eventos.isEmpty())
+            return EstadoLaboral.FUERA
+
+        var estadoActual =
+            EstadoLaboral.FUERA
+
+        eventos.forEach { (contexto, accion) ->
+
+            estadoActual =
+                calcularEstadoActual(
+                    estadoActual,
+                    contexto.name,
+                    accion.name
+                )
+        }
+
+        return estadoActual
+    }
+
+    fun obtenerEstadoPersistente(
+        userId: Int
+    ): EstadoLaboral {
+
+        val eventos = transaction {
+
+            FichajesEventosTable
+                .selectAll()
+                .where {
                     FichajesEventosTable.userId eq userId
                 }
                 .orderBy(
@@ -267,7 +375,7 @@ class FichajesEventosService {
             obtenerUltimoEvento(userId)
 
         val estadoActual =
-            obtenerEstadoActual(userId)
+            obtenerEstadoPersistente(userId)
 
         return ultimoEvento?.let {
 
@@ -295,7 +403,7 @@ class FichajesEventosService {
     ): SiguientesAccionesResponse {
 
         val estado =
-            obtenerEstadoActual(userId)
+            obtenerEstadoPersistente(userId)
 
         val accionesTaller =
             mutableListOf<AccionPermitida>()
@@ -305,7 +413,6 @@ class FichajesEventosService {
 
         val accionesReparacion =
             mutableListOf<AccionPermitida>()
-
 
         when (estado) {
 

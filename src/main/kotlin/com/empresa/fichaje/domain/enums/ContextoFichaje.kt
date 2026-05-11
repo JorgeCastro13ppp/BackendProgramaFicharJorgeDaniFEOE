@@ -6,5 +6,6 @@ import kotlinx.serialization.Serializable
 enum class ContextoFichaje {
     TALLER,
     OBRA,
-    REPARACION
+    REPARACION,
+    AUTO_CIERRE
 }

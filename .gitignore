@@ -35,4 +35,10 @@ local.properties
 *.tmp
 *.swp
 
-resources/firebase-key.json
+src/main/resources/firebase-key.json
+
+*.pem
+*.p12
+*.jks
+firebase-key.json
+certs/

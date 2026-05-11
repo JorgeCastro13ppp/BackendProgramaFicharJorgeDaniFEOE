@@ -60,6 +60,8 @@ object JornadasLaboralesTable : Table("jornadas_laborales") {
     val comentarioAdmin = varchar("comentario_admin", 255).nullable()
     val fechaCorreccion = long("fecha_correccion").nullable()
 
+    val tipoIncidencia = varchar("tipo_incidencia", 20).default("NORMAL")
+
 
     override val primaryKey =
         PrimaryKey(id)

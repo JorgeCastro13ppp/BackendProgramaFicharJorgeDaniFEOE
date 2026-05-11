@@ -37,6 +37,7 @@ class VacacionesService {
                 .selectAll()
                 .where {
                     (VacacionesTable.userId eq userId) and
+                            (VacacionesTable.estado neq "rechazado") and
                             (VacacionesTable.fechaInicio lessEq fechaFin) and
                             (VacacionesTable.fechaFin greaterEq fechaInicio)
                 }
@@ -441,7 +442,7 @@ class VacacionesService {
                     it[diasLibresUsados] =
                         maxOf(
                             0,
-                            resumen[VacacionesResumenTable.diasLibresUsados] - dias
+                            resumen[VacacionesResumenTable.diasLibresUsados] + dias
                         )
                 }
             }

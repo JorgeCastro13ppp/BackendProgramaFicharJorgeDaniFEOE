@@ -8,10 +8,13 @@ import com.empresa.fichaje.utils.requirePrincipal
 import com.empresa.fichaje.utils.userId
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 
 fun Route.jornadasRoutes() {
@@ -108,69 +111,44 @@ fun Route.jornadasRoutes() {
 
         get("/jornadas/resumen") {
 
-            val principal =
-                call.requirePrincipal()
+            val principal = call.requirePrincipal()
 
             if (!principal.isAdmin()) {
-
                 call.respond(HttpStatusCode.Forbidden)
                 return@get
             }
 
-
             val userId =
-
-                call.request.queryParameters["userId"]
-                    ?.toIntOrNull()
-
-                    ?: return@get call.respond(
-                        HttpStatusCode.BadRequest
-                    )
-
+                call.request.queryParameters["userId"]?.toIntOrNull()
 
             val mes =
-
                 call.request.queryParameters["mes"]
-
-                    ?: return@get call.respond(
-                        HttpStatusCode.BadRequest
-                    )
-
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
 
             val resumen =
-
-                service.obtenerResumenMensual(
-                    userId,
-                    mes
-                )
-
+                if (userId != null) {
+                    service.obtenerResumenMensual(userId, mes)
+                } else {
+                    service.obtenerResumenGlobalMensual(mes)
+                }
 
             call.respond(resumen)
         }
 
-        get("/jornadas/resumen-global") {
+        get("/jornadas/resumen-pendientes") {
 
-            val principal =
-                call.requirePrincipal()
+            val principal = call.requirePrincipal()
 
             if (!principal.isAdmin()) {
-
                 call.respond(HttpStatusCode.Forbidden)
                 return@get
             }
 
-
-            val mes =
-                call.request.queryParameters["mes"]
-
-                    ?: return@get call.respond(
-                        HttpStatusCode.BadRequest
-                    )
-
+            val userId =
+                call.request.queryParameters["userId"]?.toIntOrNull()
 
             val resumen =
-                service.obtenerResumenGlobalMensual(mes)
-
+                service.obtenerResumenPendientes(userId)
 
             call.respond(resumen)
         }
@@ -244,6 +222,90 @@ fun Route.jornadasRoutes() {
 
 
             call.respond(incidencias)
+        }
+
+        get("/admin/jornadas") {
+
+            val principal = call.principal<JWTPrincipal>()!!
+
+            if (!principal.isAdmin()) {
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
+
+            val userId =
+                call.request.queryParameters["userId"]?.toIntOrNull()
+
+            println("USER ID RECIBIDO: $userId")
+
+            val jornadas =
+                if (userId != null) {
+                    service.obtenerJornadasPorUsuario(userId)
+                } else {
+                    service.obtenerTodasLasJornadas()
+                }
+
+            call.respond(jornadas)
+        }
+
+        post("/admin/jornadas/cerrar-abiertas") {
+
+            val principal = call.requirePrincipal()
+
+            if (!principal.isAdmin()) {
+                call.respond(HttpStatusCode.Forbidden)
+                return@post
+            }
+
+            service.cerrarJornadasAbiertasDelDiaAnterior()
+
+            call.respond(
+                HttpStatusCode.OK,
+                mapOf("message" to "Jornadas abiertas cerradas correctamente")
+            )
+        }
+
+        post("/admin/jornadas/cerrar") {
+
+            val principal = call.requirePrincipal()
+
+            if (!principal.isAdmin()) {
+                call.respond(HttpStatusCode.Forbidden)
+                return@post
+            }
+
+            val fecha =
+                call.request.queryParameters["fecha"]
+                    ?: return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        "Falta parámetro fecha"
+                    )
+
+            service.cerrarJornadasPorFecha(fecha)
+
+            call.respond(
+                HttpStatusCode.OK,
+                mapOf("message" to "Jornadas cerradas para $fecha")
+            )
+        }
+
+        get("/admin/jornadas/usuario/{id}") {
+
+            val principal = call.requirePrincipal()
+
+            if (!principal.isAdmin()) {
+                call.respond(HttpStatusCode.Forbidden)
+                return@get
+            }
+
+            val userId =
+                call.parameters["id"]?.toIntOrNull()
+                    ?: return@get call.respond(HttpStatusCode.BadRequest)
+
+            val jornadas =
+                service.obtenerJornadasPorUsuario(userId)
+
+            call.respond(jornadas)
         }
     }
 }
