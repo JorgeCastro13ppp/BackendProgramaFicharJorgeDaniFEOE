@@ -16,5 +16,6 @@ data class JornadaResponse(
     val cerradaAutomaticamente: Boolean,
     val corregidaPor: Int?,
     val comentarioAdmin: String?,
-    val fechaCorreccion: Long?
+    val fechaCorreccion: Long?,
+    val tipoIncidencia: String
 )

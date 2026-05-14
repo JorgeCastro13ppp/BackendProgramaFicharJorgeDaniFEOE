@@ -3,13 +3,7 @@ package com.empresa.fichaje.dto.request
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class CorregirJornadaRequest(
-
-    val jornadaId: Int,
-
-    val nuevaEntradaReal: Long,
-
-    val nuevaSalidaReal: Long,
-
+data class RevisarHorasExtraRequest(
+    val estado: String,
     val comentario: String? = null
 )

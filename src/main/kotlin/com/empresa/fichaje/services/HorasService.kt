@@ -6,6 +6,7 @@ import com.empresa.fichaje.database.tables.HorasExtrasTable
 import com.empresa.fichaje.database.tables.JornadasLaboralesTable
 import com.empresa.fichaje.database.tables.UsuariosTable
 import com.empresa.fichaje.domain.enums.AccionFichaje
+import com.empresa.fichaje.domain.enums.ContextoFichaje
 import com.empresa.fichaje.dto.response.HorasDiaResponse
 import com.empresa.fichaje.dto.response.JornadaIncidenciaResponse
 import com.empresa.fichaje.dto.response.JornadaPendienteRevisionResponse
@@ -138,7 +139,7 @@ class HorasService {
         */
 
         val now =
-            timeline.lastSalida()
+            timeline.lastSalidaFinal()
                 ?: System.currentTimeMillis()
 
         return HorasDiaResponse(
@@ -254,7 +255,7 @@ class HorasService {
         */
 
         var salidaReal =
-            timeline.lastSalida()
+            timeline.lastSalidaFinal()
 
         var salidaAutomatica = esAutomatica
 
@@ -319,9 +320,18 @@ class HorasService {
         ========================
         */
 
-        val tiempoExtraDetectado =
+        val diferenciaExtra =
             if (!salidaAutomatica && salidaReal > finLegalEmpresa)
                 salidaReal - finLegalEmpresa
+            else
+                0L
+
+        val minimoExtraMillis =
+            EmpresaConfig.MINUTOS_MINIMOS_EXTRA * 60 * 1000L
+
+        val tiempoExtraDetectado =
+            if (diferenciaExtra >= minimoExtraMillis)
+                diferenciaExtra
             else
                 0L
 
@@ -523,7 +533,7 @@ class HorasService {
 
         /*
         ========================
-        CERRAR JORNADAS ABIERTAS
+        CERRAR JORNADAS
         ========================
         */
 
@@ -550,105 +560,70 @@ class HorasService {
                     ultimoEventoAyer[FichajesEventosTable.accion]
                 )
 
+            val contexto =
+                ContextoFichaje.valueOf(
+                    ultimoEventoAyer[FichajesEventosTable.contexto]
+                )
+
 
             /*
             ========================
-            SI TERMINÓ EN ENTRADA → JORNADA ABIERTA
+            TIPOS DE CIERRE
             ========================
             */
 
-            if (accion == AccionFichaje.ENTRADA) {
+            val requiereAutoSalida =
+                accion == AccionFichaje.ENTRADA
 
-                val finJornada = ayer
-                    .atTime(15, 0)
-                    .atZone(zona)
-                    .toInstant()
-                    .toEpochMilli()
-
-                insertarSalidaAutomatica(
-                    userId = userId,
-                    timestampSalida = finJornada
+            val jornadaMultidiaFinalizada =
+                accion == AccionFichaje.SALIDA &&
+                        contexto in listOf(
+                    ContextoFichaje.OBRA,
+                    ContextoFichaje.REPARACION
                 )
+
+
+            if (
+                requiereAutoSalida ||
+                jornadaMultidiaFinalizada
+            ) {
+
+                /*
+                ========================
+                INSERTAR AUTO-SALIDA
+                SOLO SI SIGUE ABIERTA
+                ========================
+                */
+
+                if (requiereAutoSalida) {
+
+                    val finJornada = ayer
+                        .atTime(15, 0)
+                        .atZone(zona)
+                        .toInstant()
+                        .toEpochMilli()
+
+                    insertarSalidaAutomatica(
+                        userId = userId,
+                        timestampSalida = finJornada
+                    )
+                }
+
+
+                /*
+                ========================
+                CALCULAR JORNADA
+                ========================
+                */
 
                 calcularJornadaLegal(
                     userId = userId,
                     fecha = ayer,
-                    timestampSalida = finJornada,
-                    esAutomatica = true
+                    timestampSalida = null,
+                    esAutomatica = requiereAutoSalida
                 )
             }
         }
-    }
-
-    fun corregirSalidaJornada(
-        jornadaId: Int,
-        nuevaSalidaReal: Long,
-        adminId: Int,
-        comentario: String?
-    ) = transaction {
-
-        val jornada =
-            JornadasLaboralesTable
-                .selectAll()
-                .where {
-                    JornadasLaboralesTable.id eq jornadaId
-                }
-                .firstOrNull()
-                ?: error("Jornada no encontrada")
-
-
-        val userId =
-            jornada[JornadasLaboralesTable.userId]
-
-        val fecha =
-            jornada[JornadasLaboralesTable.fecha]
-
-
-        /*
-        ========================
-        ACTUALIZAR SALIDA REAL
-        ========================
-        */
-
-        JornadasLaboralesTable.update({
-            JornadasLaboralesTable.id eq jornadaId
-        }) {
-
-            it[salidaReal] = nuevaSalidaReal
-            it[cerradaAutomaticamente] = false
-            it[corregidaPor] = adminId
-            it[comentarioAdmin] = comentario
-            it[fechaCorreccion] = System.currentTimeMillis()
-        }
-
-
-        /*
-        ========================
-        ELIMINAR HORAS EXTRA ANTIGUAS
-        ========================
-        */
-
-        HorasExtrasTable.deleteWhere {
-
-            (HorasExtrasTable.userId eq userId) and
-                    (HorasExtrasTable.fecha eq fecha)
-        }
-
-
-        /*
-        ========================
-        RECALCULAR JORNADA COMPLETA
-        ========================
-        */
-
-        val fechaLocal = LocalDate.parse(fecha)
-
-        calcularJornadaLegal(
-            userId = userId,
-            fecha = fechaLocal,
-            timestampSalida = nuevaSalidaReal,
-            esAutomatica = false
-        )
     }
 
     fun obtenerJornadasCerradasAutomaticamente():
@@ -736,7 +711,9 @@ class HorasService {
                     comentarioAdmin =
                         it[JornadasLaboralesTable.comentarioAdmin],
                     fechaCorreccion =
-                        it[JornadasLaboralesTable.fechaCorreccion]
+                        it[JornadasLaboralesTable.fechaCorreccion],
+                    tipoIncidencia =
+                        it[JornadasLaboralesTable.tipoIncidencia]
                 )
             }
     }
@@ -957,10 +934,31 @@ class HorasService {
 
     fun corregirJornada(
         jornadaId: Int,
+        nuevaEntradaReal: Long,
         nuevaSalidaReal: Long,
         adminId: Int,
         comentario: String?
     ) = transaction {
+
+        /*
+        ========================
+        VALIDAR
+        ========================
+        */
+
+        if (nuevaSalidaReal <= nuevaEntradaReal) {
+
+            error(
+                "La salida debe ser posterior a la entrada"
+            )
+        }
+
+
+        /*
+        ========================
+        OBTENER JORNADA
+        ========================
+        */
 
         val jornada =
 
@@ -974,26 +972,56 @@ class HorasService {
                 ?: error("Jornada no encontrada")
 
 
-        val entradaReal =
-            jornada[JornadasLaboralesTable.entradaReal]
-                ?: error("Entrada real no válida")
-
-
         val fechaStr =
             jornada[JornadasLaboralesTable.fecha]
-
 
         val userId =
             jornada[JornadasLaboralesTable.userId]
 
 
+        /*
+        ========================
+        FECHA / ZONA
+        ========================
+        */
+
         val zona =
             ZoneId.systemDefault()
-
 
         val fecha =
             LocalDate.parse(fechaStr)
 
+
+        /*
+        ========================
+        TIMELINE DEL DÍA
+        ========================
+        */
+
+        val inicioDia =
+            fecha.atStartOfDay(zona)
+                .toInstant()
+                .toEpochMilli()
+
+        val finDia =
+            fecha.plusDays(1)
+                .atStartOfDay(zona)
+                .toInstant()
+                .toEpochMilli()
+
+        val timeline =
+            FichajesEventosTable.dailyTimeline(
+                userId,
+                inicioDia,
+                finDia
+            )
+
+
+        /*
+        ========================
+        JORNADA LEGAL EMPRESA
+        ========================
+        */
 
         val inicioLegalEmpresa =
             fecha.atTime(
@@ -1003,7 +1031,6 @@ class HorasService {
                 .atZone(zona)
                 .toInstant()
                 .toEpochMilli()
-
 
         val finLegalEmpresa =
             fecha.atTime(
@@ -1018,13 +1045,30 @@ class HorasService {
                 .toEpochMilli()
 
 
-        val entradaLegal =
-            maxOf(entradaReal, inicioLegalEmpresa)
+        /*
+        ========================
+        ENTRADA / SALIDA LEGAL
+        ========================
+        */
 
+        val entradaLegal =
+            maxOf(
+                nuevaEntradaReal,
+                inicioLegalEmpresa
+            )
 
         val salidaLegal =
-            minOf(nuevaSalidaReal, finLegalEmpresa)
+            minOf(
+                nuevaSalidaReal,
+                finLegalEmpresa
+            )
 
+
+        /*
+        ========================
+        TIEMPO LEGAL
+        ========================
+        */
 
         val tiempoLegal =
             maxOf(
@@ -1033,12 +1077,73 @@ class HorasService {
             )
 
 
+        /*
+        ========================
+        HORAS EXTRA
+        ========================
+        */
+
         val tiempoExtraDetectado =
             if (nuevaSalidaReal > finLegalEmpresa)
                 nuevaSalidaReal - finLegalEmpresa
             else
                 0L
 
+        val minutosExtra =
+            tiempoExtraDetectado / 60000
+
+
+        /*
+        ========================
+        DESCANSOS / VIAJES
+        ========================
+        */
+
+        val tiempoDescanso =
+            timeline.totalDescanso()
+
+        val tiempoViaje =
+            timeline.totalViaje()
+
+
+        /*
+        ========================
+        TIEMPO REAL EFECTIVO
+        ========================
+        */
+
+        val tiempoTrabajoReal =
+            maxOf(
+                0L,
+                tiempoLegal +
+                        tiempoExtraDetectado -
+                        tiempoDescanso -
+                        tiempoViaje
+            )
+
+
+        /*
+        ========================
+        TIPO INCIDENCIA
+        ========================
+        */
+
+        val tipoIncidencia =
+            when {
+
+                tiempoExtraDetectado > 0 ->
+                    "EXTRA"
+
+                else ->
+                    "CORREGIDA"
+            }
+
+
+        /*
+        ========================
+        ACTUALIZAR JORNADA
+        ========================
+        */
 
         JornadasLaboralesTable.update({
 
@@ -1046,7 +1151,14 @@ class HorasService {
 
         }) {
 
-            it[salidaReal] = nuevaSalidaReal
+            it[entradaReal] =
+                nuevaEntradaReal
+
+            it[salidaReal] =
+                nuevaSalidaReal
+
+            it[JornadasLaboralesTable.entradaLegal] =
+                entradaLegal
 
             it[JornadasLaboralesTable.salidaLegal] =
                 salidaLegal
@@ -1054,31 +1166,57 @@ class HorasService {
             it[JornadasLaboralesTable.tiempoLegal] =
                 tiempoLegal
 
+            it[JornadasLaboralesTable.tiempoTrabajoReal] =
+                tiempoTrabajoReal
+
+            it[JornadasLaboralesTable.tiempoDescansoReal] =
+                tiempoDescanso
+
+            it[JornadasLaboralesTable.tiempoViajeReal] =
+                tiempoViaje
+
             it[JornadasLaboralesTable.tiempoExtraDetectado] =
                 tiempoExtraDetectado
 
-            it[cerradaAutomaticamente] = false
+            it[JornadasLaboralesTable.tipoIncidencia] =
+                tipoIncidencia
 
-            it[corregidaPor] = adminId
+            it[JornadasLaboralesTable.cerradaAutomaticamente] =
+                false
 
-            it[comentarioAdmin] = comentario
+            it[JornadasLaboralesTable.procesada] =
+                true
 
-            it[fechaCorreccion] =
+            it[JornadasLaboralesTable.corregidaPor] =
+                adminId
+
+            it[JornadasLaboralesTable.comentarioAdmin] =
+                comentario
+
+            it[JornadasLaboralesTable.fechaCorreccion] =
                 System.currentTimeMillis()
         }
 
 
+        /*
+        ========================
+        ELIMINAR EXTRAS PENDIENTES
+        ========================
+        */
+
         HorasExtrasTable.deleteWhere {
 
             (HorasExtrasTable.userId eq userId) and
-                    (HorasExtrasTable.fecha eq fechaStr)
-
+                    (HorasExtrasTable.fecha eq fechaStr) and
+                    (HorasExtrasTable.estado eq "pendiente")
         }
 
 
-        val minutosExtra =
-            tiempoExtraDetectado / 60000
-
+        /*
+        ========================
+        REGENERAR EXTRA
+        ========================
+        */
 
         if (minutosExtra > 0) {
 
@@ -1201,7 +1339,9 @@ class HorasService {
                     cerradaAutomaticamente = it[JornadasLaboralesTable.cerradaAutomaticamente],
                     corregidaPor = it[JornadasLaboralesTable.corregidaPor],
                     comentarioAdmin = it[JornadasLaboralesTable.comentarioAdmin],
-                    fechaCorreccion = it[JornadasLaboralesTable.fechaCorreccion]
+                    fechaCorreccion = it[JornadasLaboralesTable.fechaCorreccion],
+                    tipoIncidencia =
+                        it[JornadasLaboralesTable.tipoIncidencia]
                 )
             }
     }
@@ -1298,41 +1438,82 @@ class HorasService {
                     ultimoEvento[FichajesEventosTable.accion]
                 )
 
-
-            if (accion == AccionFichaje.ENTRADA) {
-
-                val finJornada = dia
-                    .atTime(15, 0)
-                    .atZone(zona)
-                    .toInstant()
-                    .toEpochMilli()
+            val contexto =
+                ContextoFichaje.valueOf(
+                    ultimoEvento[FichajesEventosTable.contexto]
+                )
 
 
-                val yaTieneSalida =
-                    FichajesEventosTable
-                        .selectAll()
-                        .where {
-                            (FichajesEventosTable.userId eq userId) and
-                                    (FichajesEventosTable.timestamp eq finJornada) and
-                                    (FichajesEventosTable.accion eq "SALIDA")
-                        }
-                        .any()
+            /*
+            ========================
+            TIPOS DE CIERRE
+            ========================
+            */
+
+            val requiereAutoSalida =
+                accion == AccionFichaje.ENTRADA
+
+            val jornadaMultidiaFinalizada =
+                accion == AccionFichaje.SALIDA &&
+                        contexto in listOf(
+                    ContextoFichaje.OBRA,
+                    ContextoFichaje.REPARACION
+                )
 
 
-                if (!yaTieneSalida) {
+            if (
+                requiereAutoSalida ||
+                jornadaMultidiaFinalizada
+            ) {
 
-                    insertarSalidaAutomatica(
-                        userId = userId,
-                        timestampSalida = finJornada
-                    )
+                /*
+                ========================
+                INSERTAR AUTO-SALIDA
+                SOLO SI SIGUE ABIERTA
+                ========================
+                */
+
+                if (requiereAutoSalida) {
+
+                    val finJornada = dia
+                        .atTime(15, 0)
+                        .atZone(zona)
+                        .toInstant()
+                        .toEpochMilli()
+
+
+                    val yaTieneSalida =
+                        FichajesEventosTable
+                            .selectAll()
+                            .where {
+                                (FichajesEventosTable.userId eq userId) and
+                                        (FichajesEventosTable.timestamp eq finJornada) and
+                                        (FichajesEventosTable.accion eq "SALIDA")
+                            }
+                            .any()
+
+
+                    if (!yaTieneSalida) {
+
+                        insertarSalidaAutomatica(
+                            userId = userId,
+                            timestampSalida = finJornada
+                        )
+                    }
                 }
 
+
+                /*
+                ========================
+                CALCULAR JORNADA
+                ========================
+                */
 
                 calcularJornadaLegal(
                     userId = userId,
                     fecha = dia,
-                    timestampSalida = finJornada,
-                    esAutomatica = true
+                    timestampSalida = null,
+                    esAutomatica = requiereAutoSalida
                 )
             }
         }

@@ -19,6 +19,8 @@ data class HorasExtrasResponse(
 
     val aprobadoPor: Int?,
 
+    val aprobadoPorUsername: String? = null,
+
     val fechaRevision: Long?,
 
     val comentario: String?

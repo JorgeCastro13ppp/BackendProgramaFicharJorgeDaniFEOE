@@ -103,7 +103,10 @@ class FichajesEventosService {
             ========================
             */
 
-            if (request.accion == AccionFichaje.SALIDA) {
+            if (
+                request.accion == AccionFichaje.SALIDA &&
+                request.contexto == ContextoFichaje.TALLER
+            ) {
 
                 horasService.calcularJornadaLegal(
 

@@ -1,12 +1,14 @@
 package com.empresa.fichaje.routes
 
 import com.empresa.fichaje.dto.request.HorasExtrasFilter
+import com.empresa.fichaje.dto.request.RevisarHorasExtraRequest
 import com.empresa.fichaje.services.HorasExtrasService
 import com.empresa.fichaje.utils.isAdmin
 import com.empresa.fichaje.utils.requirePrincipal
 import com.empresa.fichaje.utils.userId
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
+import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.*
 
@@ -15,9 +17,9 @@ fun Route.horasExtrasRoutes() {
     val service = HorasExtrasService()
 
     authenticate("auth-jwt") {
-        options("{...}") {
+        /*options("{...}") {
             call.respond(HttpStatusCode.OK)
-        }
+        }*/
         /*
         ========================
         ADMIN - PENDIENTES
@@ -137,37 +139,105 @@ fun Route.horasExtrasRoutes() {
             val principal = call.requirePrincipal()
 
             if (!principal.isAdmin()) {
+
                 call.respond(HttpStatusCode.Forbidden)
+
                 return@put
             }
 
-            val id = call.parameters["id"]!!.toInt()
+            val id =
+                call.parameters["id"]?.toIntOrNull()
+                    ?: return@put call.respond(
+                        HttpStatusCode.BadRequest,
+                        mapOf(
+                            "error" to "ID inválido"
+                        )
+                    )
 
-            val estado =
-                call.request.queryParameters["estado"]
-                    ?: error("Estado requerido")
+            val request =
+                call.receive<RevisarHorasExtraRequest>()
 
-            val comentario =
-                call.request.queryParameters["comentario"]
 
-            if (estado == "rechazado" && comentario.isNullOrBlank()) {
+            /*
+            ========================
+            VALIDAR ESTADO
+            ========================
+            */
+
+            if (
+                request.estado !in listOf(
+                    "aprobado",
+                    "rechazado"
+                )
+            ) {
 
                 call.respond(
                     HttpStatusCode.BadRequest,
-                    mapOf("error" to "Comentario obligatorio al rechazar")
+                    mapOf(
+                        "error" to "Estado inválido"
+                    )
                 )
 
                 return@put
             }
 
+
+            /*
+            ========================
+            COMENTARIO OBLIGATORIO
+            ========================
+            */
+
+            if (
+                request.estado == "rechazado" &&
+                request.comentario.isNullOrBlank()
+            ) {
+
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    mapOf(
+                        "error" to
+                                "Comentario obligatorio al rechazar"
+                    )
+                )
+
+                return@put
+            }
+
+
+            /*
+            ========================
+            ACTUALIZAR
+            ========================
+            */
+
             service.actualizarEstadoHorasExtra(
-                id,
-                estado,
-                principal.userId(),
-                comentario
+
+                id = id,
+
+                nuevoEstado = request.estado,
+
+                adminId = principal.userId(),
+
+                comentario = request.comentario
             )
 
-            call.respond(mapOf("message" to "Estado actualizado"))
+
+            /*
+            ========================
+            RESPONSE
+            ========================
+            */
+
+            call.respond(
+
+                HttpStatusCode.OK,
+
+                mapOf(
+                    "message" to
+                            "Horas extra actualizadas"
+                )
+            )
         }
     }
 }

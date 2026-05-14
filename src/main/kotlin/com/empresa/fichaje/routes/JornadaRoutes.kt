@@ -23,40 +23,6 @@ fun Route.jornadasRoutes() {
 
     authenticate("auth-jwt") {
 
-        put("/jornadas/{id}") {
-
-            val principal =
-                call.requirePrincipal()
-
-            if (!principal.isAdmin()) {
-
-                call.respond(HttpStatusCode.Forbidden)
-                return@put
-            }
-
-
-            val jornadaId =
-                call.parameters["id"]?.toIntOrNull()
-                    ?: return@put call.respond(
-                        HttpStatusCode.BadRequest
-                    )
-
-
-            val request =
-                call.receive<EditarJornadaRequest>()
-
-
-            service.corregirSalidaJornada(
-                jornadaId,
-                request.nuevaSalidaReal,
-                principal.userId(),
-                request.comentarioAdmin
-            )
-
-
-            call.respond(HttpStatusCode.OK)
-        }
-
         get("/jornadas/cerradas-automaticamente") {
 
             val principal =
@@ -178,6 +144,7 @@ fun Route.jornadasRoutes() {
             if (!principal.isAdmin()) {
 
                 call.respond(HttpStatusCode.Forbidden)
+
                 return@put
             }
 
@@ -191,6 +158,9 @@ fun Route.jornadasRoutes() {
                 jornadaId =
                     request.jornadaId,
 
+                nuevaEntradaReal =
+                    request.nuevaEntradaReal,
+
                 nuevaSalidaReal =
                     request.nuevaSalidaReal,
 
@@ -202,7 +172,15 @@ fun Route.jornadasRoutes() {
             )
 
 
-            call.respond(HttpStatusCode.OK)
+            call.respond(
+
+                HttpStatusCode.OK,
+
+                mapOf(
+                    "message" to
+                            "Jornada corregida"
+                )
+            )
         }
 
         get("/jornadas/incidencias") {

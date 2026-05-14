@@ -2,6 +2,7 @@ package com.empresa.fichaje.utils
 
 import com.empresa.fichaje.database.tables.FichajesEventosTable
 import com.empresa.fichaje.domain.enums.AccionFichaje
+import com.empresa.fichaje.domain.enums.ContextoFichaje
 import com.empresa.fichaje.domain.models.TimelineEvent
 import com.empresa.fichaje.domain.models.UserDailyTimeline
 import org.jetbrains.exposed.sql.ColumnSet
@@ -25,6 +26,12 @@ fun ColumnSet.dailyTimeline(
                 AccionFichaje.valueOf(
                     it[FichajesEventosTable.accion]
                 ),
+
+            contexto =
+                ContextoFichaje.valueOf(
+                    it[FichajesEventosTable.contexto]
+                ),
+
             timestamp =
                 it[FichajesEventosTable.timestamp]
         )

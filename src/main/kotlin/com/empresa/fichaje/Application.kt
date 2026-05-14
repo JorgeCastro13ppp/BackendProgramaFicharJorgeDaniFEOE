@@ -1,5 +1,6 @@
 package com.empresa.fichaje
 
+import com.empresa.fichaje.background.BackgroundTasks
 import com.empresa.fichaje.database.DatabaseFactory
 import com.empresa.fichaje.services.JwtService
 import io.github.cdimascio.dotenv.dotenv
@@ -58,7 +59,8 @@ fun Application.module() {
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
 
-        allowCredentials = true
+       // allowCredentials = true
+        allowCredentials = false
     }
 
     routing {
@@ -135,4 +137,6 @@ fun Application.module() {
             )
             .build()
     )
+
+    BackgroundTasks.iniciar()
 }

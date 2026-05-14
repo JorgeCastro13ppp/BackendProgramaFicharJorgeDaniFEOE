@@ -1,10 +1,13 @@
 package com.empresa.fichaje.domain.models
 
 import com.empresa.fichaje.domain.enums.AccionFichaje
+import com.empresa.fichaje.domain.enums.ContextoFichaje
 
 data class TimelineEvent(
 
     val accion: AccionFichaje,
+
+    val contexto: ContextoFichaje,
 
     val timestamp: Long
 )
@@ -26,7 +29,7 @@ data class UserDailyTimeline(
 
         var total = 0L
 
-        eventos.forEach { evento ->
+        eventos.forEachIndexed { index, evento ->
 
             when (evento.accion) {
 
@@ -41,8 +44,26 @@ data class UserDailyTimeline(
 
                     inicioTrabajo?.let {
                         total += evento.timestamp - it
-                        inicioTrabajo = null
                     }
+
+                    /*
+                    ========================
+                    ¿CONTINÚA EN TALLER?
+                    ========================
+                    */
+
+                    val siguienteEvento =
+                        eventos.getOrNull(index + 1)
+
+                    val continuaJornada =
+                        siguienteEvento?.accion == AccionFichaje.INICIO_VIAJE &&
+                                siguienteEvento.contexto == ContextoFichaje.TALLER
+
+                    inicioTrabajo =
+                        if (continuaJornada)
+                            evento.timestamp
+                        else
+                            null
                 }
 
                 AccionFichaje.INICIO_DESCANSO -> {
@@ -183,11 +204,14 @@ data class UserDailyTimeline(
     }
 
 
-    fun lastSalida(): Long? {
+    fun lastSalidaFinal(): Long? {
 
         return eventos
-            .lastOrNull {
+            .filter {
                 it.accion == AccionFichaje.SALIDA
+            }
+            .maxByOrNull {
+                it.timestamp
             }
             ?.timestamp
     }
