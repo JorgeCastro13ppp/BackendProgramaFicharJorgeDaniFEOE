@@ -1451,7 +1451,17 @@ class HorasService {
             */
 
             val requiereAutoSalida =
-                accion == AccionFichaje.ENTRADA
+
+                accion in listOf(
+
+                    AccionFichaje.ENTRADA,
+
+                    AccionFichaje.INICIO_DESCANSO,
+                    AccionFichaje.FIN_DESCANSO,
+
+                    AccionFichaje.INICIO_VIAJE,
+                    AccionFichaje.FIN_VIAJE
+                )
 
             val jornadaMultidiaFinalizada =
                 accion == AccionFichaje.SALIDA &&
@@ -1460,7 +1470,13 @@ class HorasService {
                     ContextoFichaje.REPARACION
                 )
 
+            println(
+                "User=$userId | accion=$accion | contexto=$contexto"
+            )
 
+            println(
+                "requiereAutoSalida=$requiereAutoSalida | jornadaMultidiaFinalizada=$jornadaMultidiaFinalizada"
+            )
             if (
                 requiereAutoSalida ||
                 jornadaMultidiaFinalizada

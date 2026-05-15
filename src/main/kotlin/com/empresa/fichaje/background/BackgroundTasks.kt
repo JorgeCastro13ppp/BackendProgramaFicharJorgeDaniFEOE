@@ -51,17 +51,32 @@ object BackgroundTasks {
 
                     /*
                     ========================
-                    00:05
+                    LOG LOOP
                     ========================
                     */
 
-                    val esHoraCierre =
+                    println(
+                        "Scheduler check -> $ahora"
+                    )
 
-                        ahora.hour ==
-                                EmpresaConfig.HORA_CIERRE_AUTOMATICO &&
+                    /*
+                    ========================
+                    ¿YA PASÓ HORA CIERRE?
+                    ========================
+                    */
 
-                                ahora.minute >=
-                                EmpresaConfig.MINUTO_CIERRE_AUTOMATICO
+                    val yaPasoHoraCierre =
+
+                        ahora.hour >
+                                EmpresaConfig.HORA_CIERRE_AUTOMATICO ||
+
+                                (
+                                        ahora.hour ==
+                                                EmpresaConfig.HORA_CIERRE_AUTOMATICO &&
+
+                                                ahora.minute >=
+                                                EmpresaConfig.MINUTO_CIERRE_AUTOMATICO
+                                        )
 
 
                     /*
@@ -74,8 +89,19 @@ object BackgroundTasks {
                         ultimaFechaProcesada == hoy
 
 
+                    println(
+                        "yaPasoHoraCierre=$yaPasoHoraCierre | yaProcesadoHoy=$yaProcesadoHoy"
+                    )
+
+
+                    /*
+                    ========================
+                    EJECUTAR CIERRE
+                    ========================
+                    */
+
                     if (
-                        esHoraCierre &&
+                        yaPasoHoraCierre &&
                         !yaProcesadoHoy
                     ) {
 
@@ -110,7 +136,7 @@ object BackgroundTasks {
 
                 /*
                 ========================
-                CHECK CADA 30 SEG
+                CHECK CADA X TIEMPO
                 ========================
                 */
 
